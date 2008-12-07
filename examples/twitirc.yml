@@ -1,0 +1,14 @@
+irc_server_name: twitter.irc
+irc_server_port: 6667
+irc_botname: tweeter
+irc_botircname: your friendly bouncer
+irc_nickname: your_irc_nick
+irc_password: your_irc_password
+irc_mask: '*!*@twitter.irc'
+irc_channel: '&twitter'
+twitter_screen_name: your_twitter_screen_name
+twitter_alias: me
+twitter_username: you@example.com
+twitter_password: your_twitter_password
+twitter_retry: 300 
+twitter_retry_on_error: 60
