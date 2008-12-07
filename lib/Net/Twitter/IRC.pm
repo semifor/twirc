@@ -1,6 +1,7 @@
 package Net::Twitter::IRC;
 use MooseX::POE;
 
+use LWP::UserAgent::POE;
 use POE qw(Component::Server::IRC);
 use Net::Twitter;
 use Log::Log4perl qw/:easy/;
@@ -249,6 +250,13 @@ sub START {
         password => $self->twitter_password,
         useragent => 'TwitIrc (alpha)',
     ));
+    $self->twitter->{ua} = my $agent = LWP::UserAgent::POE->new(
+        agent => 'TwitIrc (alpha)',
+        redirects => 3,
+    );
+    $agent->requests_redirectable([qw/HEAD GET/]);
+    $agent->credentials('twitter.com:80', 'Twitter API', $self->twitter_username, $self->twitter_password);
+
     return $self;
 }
 
