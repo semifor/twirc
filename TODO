@@ -1,13 +1,21 @@
-- Use LWP::UserAgent::POE
+- Chose a name: currently using Net::Twitter::IRC, but it may not remain
+  Net::Twitter based.
 
-  This was working until I upgraded from LWP::UserAgent v5.813 to v5.820.
-  That seems to have broken LWP::UserAgent::POE's ability to handle
-  authentication.
+- Use LWP::UserAgent::POE or POE::Component::Client::HTTP direrctly.
+
+  I had working with LWP::UserAgent::POE until I upgraded from LWP::UserAgent
+  v5.813 to v5.820.  That seems to have broken LWP::UserAgent::POE's ability to
+  handle authentication.
 
   Ideally, a patch to Net::Twitter allowing a pre-initialized user agent, or
-  user_agent_class and user_agent_args in Net::Twitter->new.
+  user_agent_class and user_agent_args in Net::Twitter->new.  (I submitted a
+  patch to the author, but no response, yet.)
 
 - Have IRC use stdin/stdout instead of a listening port so it can be launched
-  automatically via inetd.
+  automatically via inetd.  Is that feasible?  If not, make it a daemon and
+  don't exit on disconnect.
 
-- Deal with large numbers of friends, followers, statuses.
+- Deal with large numbers of friends, followers, statuses.  I currently have
+  just a few friends/followers.  Probably need modifications to handle large
+  numbers.  Using the blocking Net::Twitter may become a problem for large
+  numbers, as well.
