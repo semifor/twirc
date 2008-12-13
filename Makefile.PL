@@ -12,6 +12,9 @@ requires 'MooseX::POE'                 => 0;
 requires 'Net::Twitter'                => 0;
 requires 'Email::Valid'                => 0;
 requires 'POE::Component::Server::IRC' => 0.02005;
+requires 'Log::Log4Perl';
+requires 'POE::Component::TSTP';
+
 
 eval {
     system 'pod2text lib/Net/Twitter/IRC.pm > README';
