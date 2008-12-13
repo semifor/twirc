@@ -6,6 +6,8 @@ use Net::Twitter;
 use Log::Log4perl qw/:easy/;
 use Email::Valid;
 
+our $VERSION='0.01';
+
 =head1 NAME
 
 Net::Twitter::IRC - Twitter/IRC gateway
@@ -702,6 +704,13 @@ event cmd_notify => sub {
             $self->twitter_error("notify $onoff failed for $nick");
         }
     }
+};
+
+event cmd_help => sub {
+    my ($self, $argstr)=@_[OBJECT, ARG0];
+    $self->bot_says("Available commands:");
+    $self->bot_says("post follow unfollow block unblock whois notify");
+    $self->bot_says('/msg nick for a direct message.')
 };
 
 1;
