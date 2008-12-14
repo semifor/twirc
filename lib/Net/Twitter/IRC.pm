@@ -104,11 +104,11 @@ has irc_server_port     => ( isa => 'Int', is => 'ro', default => 6667 );
 
 =item irc_mask
 
-The IRC mask used to restrict connecting users.  Defaults to C<*!*@*>.
+The IRC user/host mask used to restrict connecting users.  Defaults to C<*@127.0.0.1>.
 
 =cut
 
-has irc_mask            => ( isa => 'Str', is => 'ro', default => '*!*@*' );
+has irc_mask            => ( isa => 'Str', is => 'ro', default => '*@127.0.0.1' );
 
 
 =item irc_password
@@ -237,10 +237,10 @@ sub START {
 
     # register ircd to receive events
     $self->post_ircd('register' );
-    #$heap->{ircd}->add_auth(
-        #mask => $conf->{mask},
-        #password => $conf->{password}
-    #);
+    $self->ircd->add_auth(
+        mask     => $self->irc_mask,
+        password => $self->irc_password,
+    );
     $self->post_ircd('add_listener', port => $self->irc_server_port);
 
     # add super user
