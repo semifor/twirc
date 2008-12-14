@@ -12,8 +12,10 @@ requires 'MooseX::POE'                 => 0;
 requires 'Net::Twitter'                => 0;
 requires 'Email::Valid'                => 0;
 requires 'POE::Component::Server::IRC' => 0.02005;
-requires 'Log::Log4Perl';
+requires 'Log::Log4perl';
 requires 'POE::Component::TSTP';
+requires 'LWP::UserAgent::POE'         => '0.02';
+requires 'HTML::Entities';
 
 
 eval {

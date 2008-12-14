@@ -1,2 +1,8 @@
-0.01000_01
+0.02  2008-12-14
+        - decode HTML entities
+        - Use LWP::UserAgent::POE for non-blocking IO
+        - Help added (marcusramberg)
+        - dependencies (marcusramberg)
+
+0.01  2008-12-06
         - initial dev release

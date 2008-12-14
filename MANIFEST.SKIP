@@ -46,3 +46,7 @@
 
 # Dont use Module::Build anymore
 ^Build.PL$
+
+# local config files
+^\w+\.conf$
+^\w+\.yml$
