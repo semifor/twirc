@@ -12,7 +12,7 @@ use Email::Valid;
 # TODO: remove HTML::Entitiens and decode_entities calls.
 use HTML::Entities;
 
-our $VERSION='0.02';
+our $VERSION='0.02_1';
 
 =head1 NAME
 
@@ -420,51 +420,74 @@ event throttle_messages => sub {
 
 # Add friends to the channel
 event friends => sub {
-    my ($self) = @_;
+    my ($self, $page ) = @_[OBJECT, ARG0];
+
+    my $retry = $self->twitter_retry_on_error;
 
     DEBUG "[twitter:friends] calling...\n";
-    my $friends = $self->twitter->friends;
-    unless ( $friends ) {
-        my $retry = $self->twitter_retry_on_error;
-        $self->twitter_error("request for friends failed; retrying in $retry seconds");
-        $_[KERNEL]->delay(friends => $retry);
-        return;
-    }
+    my $page ||= 0;
+    while ( my $friends = $self->twitter->friends({page => $page}) ) {
+        unless ( $friends ) {
+            $self->twitter_error("request for friends failed; retrying in $retry seconds");
+            $_[KERNEL]->delay(friends => $retry);
+            return;
+        }
+        ++$page;
 
-    DEBUG "\tfriends returned ", scalar @$friends, " friends\n";
+        DEBUG "\tfriends returned ", scalar @$friends, " friends\n";
 
-    for my $friend ( @$friends ) {
-        my ($nick, $name) = @{$friend}{qw/screen_name name/};
+        # Current API gets 100 friends per page.  If we have exactly 100 friends
+        # we have to try again with page=2 and we should get (I'm assuming, here)
+        # an empty arrayref.  What if the API changes to 200, etc.?  Might as well
+        # just loop until we get an empty arrayref.  That will handle either case.
+        last unless @$friends;
 
-        next if $self->users->{$nick};
-        $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $name });
-        $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
-        $self->users->{$nick} = $friend;
+        for my $friend ( @$friends ) {
+            my ($nick, $name) = @{$friend}{qw/screen_name name/};
+
+            next if $self->users->{$nick};
+            $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $name });
+            $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
+            $self->users->{$nick} = $friend;
+        }
+        last;
     }
     $self->yield('followers');
 };
 
 # Give friends who are also followers voice; it's just a visual hint to the user.
 event followers => sub {
-    my ($self) = @_;
+    my ($self, $page ) = @_[OBJECT, ARG0];
+
+    my $retry = $self->twitter_retry_on_error;
 
     DEBUG "[twitter:followers] calling...\n";
-    my $followers = $self->twitter->followers;
-    unless ( $followers ) {
-        my $retry = $self->twitter_retry_on_error;
-        $self->twitter_error("request for followers failed; retrying in $retry seconds");
-        $_[KERNEL]->delay(followers => $retry);
-        return;
-    }
-
-    DEBUG "\tfollowers returned ", scalar @$followers, " followers\n";
-
-    for my $follower ( @$followers ) {
-        my $nick = $follower->{screen_name};
-        if ( $self->users->{$nick} ) {
-            $self->post_ircd(daemon_cmd_mode =>
-                $self->irc_botname, $self->irc_channel, '+v', $nick);
+    my $page ||= 1;
+    while ( my $followers = $self->twitter->followers({page => $page}) ) {
+        DEBUG "\tpage: $page\n";
+        unless ( $followers ) {
+            $self->twitter_error("request for followers failed; retrying in $retry seconds");
+            $_[KERNEL]->delay(followers => $retry, $page);
+            return;
         }
+        ++$page;
+
+        DEBUG "\tfollowers returned ", scalar @$followers, " followers\n";
+
+        # see comments for event friends
+        last unless @$followers;
+
+        for my $follower ( @$followers ) {
+            my $nick = $follower->{screen_name};
+            if ( $self->users->{$nick} ) {
+                $self->post_ircd(daemon_cmd_mode =>
+                    $self->irc_botname, $self->irc_channel, '+v', $nick);
+            }
+        }
+        # TODO: Net::Twitter does not currently support the "page" parameter
+        # so we need to bail to prevent looping.  Remove this when Net::Twitter
+        # is fixed.
+        last;
     }
 };
 

@@ -1,3 +1,8 @@
+0.02_1  2008-12-14
+        - added support for >100 friends
+        - added support for >100 followers (pending Net::Twitter patch)
+        - added implementation for IRC mask/password auth
+
 0.02  2008-12-14
         - decode HTML entities
         - Use LWP::UserAgent::POE for non-blocking IO
