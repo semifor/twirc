@@ -7,7 +7,12 @@ use Net::Twitter;
 use Log::Log4perl qw/:easy/;
 use Email::Valid;
 
-our $VERSION='0.01';
+# Net::Twitter returns text with encoded HTML entities.  I *think* decoding
+# properly belongs in Net::Twitter.  So, if it gets added, there:
+# TODO: remove HTML::Entitiens and decode_entities calls.
+use HTML::Entities;
+
+our $VERSION='0.02';
 
 =head1 NAME
 
@@ -185,7 +190,6 @@ has stack               => ( isa => 'ArrayRef[HashRef]', is => 'rw', default => 
 has friends_timeline_since_id => ( isa => 'Int', is => 'rw' );
 has last_user_timeline_id     => ( isa => 'Int', is => 'rw', default => 0 );
 
-
 sub post_ircd {
     my $self = shift;
     $self->ircd->yield(@_);
@@ -210,7 +214,8 @@ sub set_topic {
 
     return unless $status->{id} > $self->last_user_timeline_id;
 
-    $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel, $status->{text});
+    $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel,
+           decode_entities($status->{text}));
     $self->last_user_timeline_id($status->{id});
 };
 
@@ -483,7 +488,7 @@ event friends_timeline => sub {
     my $new_topic;
     for my $status (reverse @{ $statuses }) {
         my ($name, $ircname) = @{$status->{user}}{qw/screen_name name/};
-        my $text = $status->{text};
+        my $text = decode_entities($status->{text});
 
         # alias our twitter_name if configured
         # (to avoid a collision in case our twitter screen name and irc nick are the same)
