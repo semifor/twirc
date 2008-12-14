@@ -252,12 +252,18 @@ sub START {
         password => $self->twitter_password,
         useragent => 'TwitIrc (alpha)',
     ));
+
+    # TODO: Awaiting a patch to Net::Twitter to allow LWP::UserAgent::POE,
+    # until, then, we'll poke at its internals
     $self->twitter->{ua} = my $agent = LWP::UserAgent::POE->new(
         agent => 'TwitIrc (alpha)',
-        redirects => 3,
     );
-    $agent->requests_redirectable([qw/HEAD GET/]);
-    $agent->credentials('twitter.com:80', 'Twitter API', $self->twitter_username, $self->twitter_password);
+    $agent->credentials(
+        $self->twitter->{apihost},
+        $self->twitter->{apirealm},
+        $self->twitter_username,
+        $self->twitter_password,
+    );
 
     return $self;
 }
