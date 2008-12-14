@@ -14,6 +14,7 @@ requires 'Email::Valid'                => 0;
 requires 'POE::Component::Server::IRC' => 0.02005;
 requires 'Log::Log4Perl';
 requires 'POE::Component::TSTP';
+requires 'LWP::UserAgent::POE'         => '0.02';
 
 
 eval {
