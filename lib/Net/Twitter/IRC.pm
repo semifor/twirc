@@ -12,7 +12,7 @@ use Email::Valid;
 # TODO: remove HTML::Entitiens and decode_entities calls.
 use HTML::Entities;
 
-our $VERSION='0.02_1';
+our $VERSION='0.02_2';
 
 =head1 NAME
 
