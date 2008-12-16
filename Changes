@@ -1,5 +1,8 @@
-0.02_2  2008-12-15
+0.02_3  2008-12-16
         - give voice to existing followers on follow
+        - Net::Twitter 1.20 fixes >100 followers
+
+0.02_2  2008-12-15
         - fixed page param handling
 
 0.02_1  2008-12-14
