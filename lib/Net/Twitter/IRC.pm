@@ -12,7 +12,7 @@ use Email::Valid;
 # TODO: remove HTML::Entities and decode_entities calls.
 use HTML::Entities;
 
-our $VERSION='0.02_3';
+our $VERSION='0.02_4';
 
 =head1 NAME
 
@@ -614,7 +614,10 @@ event cmd_follow => sub {
     $self->users->{$nick} = $friend;
 
     # give $nick voice if $nick is a follower
-    if ( $self->twitter->relationship_exists($nick, $self->twitter_screen_name) ) {
+    # TODO: Twitter API is broken http://is.gd/bZpM
+    # Waiting for either Net::Twitter to apply my workaround patch or Twitter to fix
+    # it's API.
+    if ( 0 && $self->twitter->relationship_exists($nick, $self->twitter_screen_name) ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $nick);
     }
