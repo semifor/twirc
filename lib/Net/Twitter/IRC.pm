@@ -9,7 +9,7 @@ use Email::Valid;
 
 # Net::Twitter returns text with encoded HTML entities.  I *think* decoding
 # properly belongs in Net::Twitter.  So, if it gets added, there:
-# TODO: remove HTML::Entitiens and decode_entities calls.
+# TODO: remove HTML::Entities and decode_entities calls.
 use HTML::Entities;
 
 our $VERSION='0.02_2';
@@ -484,10 +484,6 @@ event followers => sub {
                     $self->irc_botname, $self->irc_channel, '+v', $nick);
             }
         }
-        # TODO: Net::Twitter does not currently support the "page" parameter
-        # so we need to bail to prevent looping.  Remove this when Net::Twitter
-        # is fixed.
-        last;
     }
 };
 
@@ -616,6 +612,12 @@ event cmd_follow => sub {
     $self->post_ircd('add_spoofed_nick', { nick => $nick, ircname => $name });
     $self->post_ircd(daemon_cmd_join => $name, $self->irc_channel);
     $self->users->{$nick} = $friend;
+
+    # give $nick voice if $nick is a follower
+    if ( $self->twitter->relationship_exists($nick, $self->twitter_screen_name) ) {
+        $self->post_ircd(daemon_cmd_mode =>
+            $self->irc_botname, $self->irc_channel, '+v', $nick);
+    }
 };
 
 =item unfollow I<id>

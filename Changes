@@ -1,4 +1,5 @@
 0.02_2  2008-12-15
+        - give voice to existing followers on follow
         - fixed page param handling
 
 0.02_1  2008-12-14
