@@ -277,7 +277,7 @@ sub DEFAULT {
     my ($self, $event) = @_[KERNEL, ARG0];
 
     $self->bot_says(qq/I don't understand "$1". Try "help"./)
-        if $event =~ /^cmd_(\S+)$/;
+        if $event =~ /^cmd_(\S+)/;
 }
 
 # Without detaching the ircd child session, the application will not
@@ -756,8 +756,14 @@ event cmd_notify => sub {
 event cmd_help => sub {
     my ($self, $argstr)=@_[OBJECT, ARG0];
     $self->bot_says("Available commands:");
-    $self->bot_says("post follow unfollow block unblock whois notify");
+    $self->bot_says("post follow unfollow block unblock whois notify refresh");
     $self->bot_says('/msg nick for a direct message.')
+};
+
+event cmd_refresh => sub {
+    my ($self) = @_;
+
+    $self->yield('delay_friends_timeline');
 };
 
 1;
