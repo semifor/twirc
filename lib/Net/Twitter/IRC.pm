@@ -12,7 +12,7 @@ use Email::Valid;
 # TODO: remove HTML::Entitiens and decode_entities calls.
 use HTML::Entities;
 
-our $VERSION='0.02_1';
+our $VERSION='0.02_2';
 
 =head1 NAME
 
@@ -425,7 +425,7 @@ event friends => sub {
     my $retry = $self->twitter_retry_on_error;
 
     DEBUG "[twitter:friends] calling...\n";
-    my $page ||= 0;
+    $page ||= 1;
     while ( my $friends = $self->twitter->friends({page => $page}) ) {
         unless ( $friends ) {
             $self->twitter_error("request for friends failed; retrying in $retry seconds");
@@ -462,7 +462,7 @@ event followers => sub {
     my $retry = $self->twitter_retry_on_error;
 
     DEBUG "[twitter:followers] calling...\n";
-    my $page ||= 1;
+    $page ||= 1;
     while ( my $followers = $self->twitter->followers({page => $page}) ) {
         DEBUG "\tpage: $page\n";
         unless ( $followers ) {

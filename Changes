@@ -1,3 +1,6 @@
+0.02_2  2008-12-15
+        - fixed page param handling
+
 0.02_1  2008-12-14
         - added support for >100 friends
         - added support for >100 followers (pending Net::Twitter patch)
