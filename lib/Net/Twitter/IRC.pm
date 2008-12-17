@@ -518,7 +518,7 @@ event friends_timeline => sub {
         DEBUG "\t\$name = $name, \$twitter_name = ", $self->twitter_screen_name;
 
         # TODO: is this even necessary? Can we just send a privmsg from a real user?
-        if ( $name eq $self->twitter_screen_name ) {
+        if ( $name eq $self->twitter_screen_name && $status !~ m/^\s+\@/ ) {
             $new_topic = $status;
             $name = $self->twitter_alias if $self->twitter_alias;
         }
