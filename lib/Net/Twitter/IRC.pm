@@ -586,6 +586,12 @@ event cmd_post => sub {
     my ($self, $text) = @_[OBJECT, ARG0];
 
     DEBUG "[cmd_post_status]";
+
+    if ( (my $n = length($text) - 140) > 0 ) {
+        $self->bot_says("Message not sent; $n characters too long. Limit is 140 characters.");
+        return;
+    }
+
     my $status = $self->twitter->update($text);
     unless ( $status ) {
         $self->twitter_error('status update failed; try again later');
