@@ -178,6 +178,17 @@ same.  Defaults to C<me>.
 
 has twitter_alias       => ( isa => 'Str', is => 'ro', default => 'me' );
 
+=item echo_posts
+
+If false, posts sent by L<Net::Twitter::IRC> will not be redisplayed when received
+is the friends_timeline.  Defaults to false.
+
+Set C<echo_posts(1)> to see your own tweets in chronological order with the others.
+
+=cut
+
+has echo_posts => ( isa => 'Bool', is => 'rw', default => 0 );
+
 =back
 
 =cut
@@ -530,6 +541,7 @@ event friends_timeline => sub {
         if ( $name eq $self->twitter_screen_name ) {
             $new_topic = $status;
             $name = $self->twitter_alias if $self->twitter_alias;
+            next if !$self->echo_posts && $status->{id} <= $self->last_user_timeline_id;
         }
 
         unless ( $self->users->{$name} ) {
