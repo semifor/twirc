@@ -219,6 +219,13 @@ sub set_topic {
     $self->last_user_timeline_id($status->{id});
 };
 
+# match any nick
+sub nicks_alternation {
+    my $self = shift;
+
+    return join '|', map quotemeta, keys %{$self->users};
+}
+
 sub START {
     my ($self) = @_;
 
@@ -358,12 +365,18 @@ event ircd_daemon_quit => sub {
 };
 
 event ircd_daemon_public => sub {
-    my ($self, $user, $channel, $text) = @_[OBJECT, ARG0, ARG1, ARG2];
+     my ($self, $user, $channel, $text) = @_[OBJECT, ARG0, ARG1, ARG2];
 
-    my $nick = ( $user =~ m/^(.*)!/)[0];
-    DEBUG "[ircd_daemon_public] $nick: $text\n";
-    return unless $nick eq $self->irc_nickname;
+     my $nick = ( $user =~ m/^(.*)!/)[0];
+     DEBUG "[ircd_daemon_public] $nick: $text\n";
+     return unless $nick eq $self->irc_nickname;
 
+     # treat "nick: ..." as "post @nick ..."
+     my $nick_alternation = $self->nicks_alternation;
+     if ( $text =~ s/^($nick_alternation):\s+/\@$1 /i ) {
+         $self->yield(cmd_post => $text);
+         return;
+     }
 
      my ($command, $arg) = split /\s/, $text, 2;
      if ( $command =~ /^\w+$/ ) {
@@ -752,6 +765,12 @@ event cmd_notify => sub {
         }
     }
 };
+
+=item help
+
+Display a simple help message
+
+=cut
 
 event cmd_help => sub {
     my ($self, $argstr)=@_[OBJECT, ARG0];
