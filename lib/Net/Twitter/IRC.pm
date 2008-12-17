@@ -632,11 +632,7 @@ event cmd_follow => sub {
     $self->post_ircd(daemon_cmd_join => $name, $self->irc_channel);
     $self->users->{$nick} = $friend;
 
-    # give $nick voice if $nick is a follower
-    # TODO: Twitter API is broken http://is.gd/bZpM
-    # Waiting for either Net::Twitter to apply my workaround patch or Twitter to fix
-    # it's API.
-    if ( 0 && $self->twitter->relationship_exists($nick, $self->twitter_screen_name) ) {
+    if ( $self->twitter->relationship_exists($nick, $self->twitter_screen_name) ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $nick);
     }
