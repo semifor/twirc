@@ -9,10 +9,10 @@ use Email::Valid;
 
 # Net::Twitter returns text with encoded HTML entities.  I *think* decoding
 # properly belongs in Net::Twitter.  So, if it gets added, there:
-# TODO: remove HTML::Entitiens and decode_entities calls.
+# TODO: remove HTML::Entities and decode_entities calls.
 use HTML::Entities;
 
-our $VERSION='0.02_2';
+our $VERSION='0.02_4';
 
 =head1 NAME
 
@@ -178,6 +178,17 @@ same.  Defaults to C<me>.
 
 has twitter_alias       => ( isa => 'Str', is => 'ro', default => 'me' );
 
+=item echo_posts
+
+If false, posts sent by L<Net::Twitter::IRC> will not be redisplayed when received
+is the friends_timeline.  Defaults to false.
+
+Set C<echo_posts(1)> to see your own tweets in chronological order with the others.
+
+=cut
+
+has echo_posts => ( isa => 'Bool', is => 'rw', default => 0 );
+
 =back
 
 =cut
@@ -218,6 +229,13 @@ sub set_topic {
            decode_entities($status->{text}));
     $self->last_user_timeline_id($status->{id});
 };
+
+# match any nick
+sub nicks_alternation {
+    my $self = shift;
+
+    return join '|', map quotemeta, keys %{$self->users};
+}
 
 sub START {
     my ($self) = @_;
@@ -277,7 +295,7 @@ sub DEFAULT {
     my ($self, $event) = @_[KERNEL, ARG0];
 
     $self->bot_says(qq/I don't understand "$1". Try "help"./)
-        if $event =~ /^cmd_(\S+)$/;
+        if $event =~ /^cmd_(\S+)/;
 }
 
 # Without detaching the ircd child session, the application will not
@@ -358,12 +376,18 @@ event ircd_daemon_quit => sub {
 };
 
 event ircd_daemon_public => sub {
-    my ($self, $user, $channel, $text) = @_[OBJECT, ARG0, ARG1, ARG2];
+     my ($self, $user, $channel, $text) = @_[OBJECT, ARG0, ARG1, ARG2];
 
-    my $nick = ( $user =~ m/^(.*)!/)[0];
-    DEBUG "[ircd_daemon_public] $nick: $text\n";
-    return unless $nick eq $self->irc_nickname;
+     my $nick = ( $user =~ m/^(.*)!/)[0];
+     DEBUG "[ircd_daemon_public] $nick: $text\n";
+     return unless $nick eq $self->irc_nickname;
 
+     # treat "nick: ..." as "post @nick ..."
+     my $nick_alternation = $self->nicks_alternation;
+     if ( $text =~ s/^($nick_alternation):\s+/\@$1 /i ) {
+         $self->yield(cmd_post => $text);
+         return;
+     }
 
      my ($command, $arg) = split /\s/, $text, 2;
      if ( $command =~ /^\w+$/ ) {
@@ -484,10 +508,6 @@ event followers => sub {
                     $self->irc_botname, $self->irc_channel, '+v', $nick);
             }
         }
-        # TODO: Net::Twitter does not currently support the "page" parameter
-        # so we need to bail to prevent looping.  Remove this when Net::Twitter
-        # is fixed.
-        last;
     }
 };
 
@@ -521,6 +541,7 @@ event friends_timeline => sub {
         if ( $name eq $self->twitter_screen_name && $status !~ m/^\s+\@/ ) {
             $new_topic = $status;
             $name = $self->twitter_alias if $self->twitter_alias;
+            next if !$self->echo_posts && $status->{id} <= $self->last_user_timeline_id;
         }
 
         unless ( $self->users->{$name} ) {
@@ -577,6 +598,12 @@ event cmd_post => sub {
     my ($self, $text) = @_[OBJECT, ARG0];
 
     DEBUG "[cmd_post_status]";
+
+    if ( (my $n = length($text) - 140) > 0 ) {
+        $self->bot_says("Message not sent; $n characters too long. Limit is 140 characters.");
+        return;
+    }
+
     my $status = $self->twitter->update($text);
     unless ( $status ) {
         $self->twitter_error('status update failed; try again later');
@@ -616,6 +643,11 @@ event cmd_follow => sub {
     $self->post_ircd('add_spoofed_nick', { nick => $nick, ircname => $name });
     $self->post_ircd(daemon_cmd_join => $name, $self->irc_channel);
     $self->users->{$nick} = $friend;
+
+    if ( $self->twitter->relationship_exists($nick, $self->twitter_screen_name) ) {
+        $self->post_ircd(daemon_cmd_mode =>
+            $self->irc_botname, $self->irc_channel, '+v', $nick);
+    }
 };
 
 =item unfollow I<id>
@@ -748,11 +780,23 @@ event cmd_notify => sub {
     }
 };
 
+=item help
+
+Display a simple help message
+
+=cut
+
 event cmd_help => sub {
     my ($self, $argstr)=@_[OBJECT, ARG0];
     $self->bot_says("Available commands:");
-    $self->bot_says("post follow unfollow block unblock whois notify");
+    $self->bot_says("post follow unfollow block unblock whois notify refresh");
     $self->bot_says('/msg nick for a direct message.')
+};
+
+event cmd_refresh => sub {
+    my ($self) = @_;
+
+    $self->yield('delay_friends_timeline');
 };
 
 1;

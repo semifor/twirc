@@ -1,16 +1,30 @@
+0.02_5
+    - Added echo_posts option, defaults to 0
+    - Net::Twitter 1.21 works around Twitter API fail on friendships/exists
+    - error on messages longer than 140 characters
+    - easy replies: "nick: ..." becomes "post @nick ..."
+
+0.02_4  2008-12-16
+	- disabled call to relationship_exists until fixed by Twitter or
+	  Net::Twitter workaronud patch is applied
+
+0.02_3  2008-12-16
+    - give voice to existing followers on follow
+    - Net::Twitter 1.20 fixes >100 followers
+
 0.02_2  2008-12-15
-        - fixed page param handling
+    - fixed page param handling
 
 0.02_1  2008-12-14
-        - added support for >100 friends
-        - added support for >100 followers (pending Net::Twitter patch)
-        - added implementation for IRC mask/password auth
+    - added support for >100 friends
+    - added support for >100 followers (pending Net::Twitter patch)
+    - added implementation for IRC mask/password auth
 
 0.02  2008-12-14
-        - decode HTML entities
-        - Use LWP::UserAgent::POE for non-blocking IO
-        - Help added (marcusramberg)
-        - dependencies (marcusramberg)
+    - decode HTML entities
+    - Use LWP::UserAgent::POE for non-blocking IO
+    - Help added (marcusramberg)
+    - dependencies (marcusramberg)
 
 0.01  2008-12-06
-        - initial dev release
+    - initial dev release
