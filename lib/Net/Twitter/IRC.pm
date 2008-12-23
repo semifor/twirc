@@ -271,22 +271,11 @@ sub START {
     $self->yield('delay_friends_timeline');
 
     $self->twitter(Net::Twitter->new(
+        useragent_class => 'LWP::UserAgent::POE',
         username => $self->twitter_username,
         password => $self->twitter_password,
         useragent => 'TwitIrc (alpha)',
     ));
-
-    # TODO: Awaiting a patch to Net::Twitter to allow LWP::UserAgent::POE,
-    # until, then, we'll poke at its internals
-    $self->twitter->{ua} = my $agent = LWP::UserAgent::POE->new(
-        agent => 'TwitIrc (alpha)',
-    );
-    $agent->credentials(
-        $self->twitter->{apihost},
-        $self->twitter->{apirealm},
-        $self->twitter_username,
-        $self->twitter_password,
-    );
 
     return $self;
 }
@@ -512,7 +501,7 @@ event followers => sub {
 };
 
 event friends_timeline => sub {
-    my($self, $since_id) = @_[OBJECT, ARG0];
+    my ($self) = @_;
 
     DEBUG "[friends_timeline] \n";
     my $statuses = $self->twitter->friends_timeline({
