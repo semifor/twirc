@@ -207,6 +207,23 @@ Defaults to 60.
 
 has truncate_to         => ( isa => 'Int', is => 'ro', default => 60 );
 
+=item check_replies
+
+Experimental!
+If true, checks for @replies when polling for friends' timeline updates
+and merges them with normal status updates.  Normally, only replies from
+friends are displayed.  This provides the display of @replies from
+users not followed.  It comes at the expense of an additional API call
+on each timeline poll, so keep that in mind when setting L<twitter_retry>.
+Twitter imposes an API call limit of 100 calls per hour.
+
+This also has the effect of adding senders of @replies to the channel,
+even though they are not followed.
+
+=cut
+
+has check_replies => ( isa => 'Bool', is => 'rw', default => 0 );
+
 =back
 
 =cut
@@ -218,6 +235,7 @@ has joined              => ( isa => 'Bool', is => 'rw', default => 0 );
 has stack               => ( isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
 has friends_timeline_since_id => ( isa => 'Int', is => 'rw' );
 has last_user_timeline_id     => ( isa => 'Int', is => 'rw', default => 0 );
+has replies_since_id    => ( isa => 'Int', is => 'rw' );
 has stash               => ( isa => 'Maybe[HashRef]', is => 'rw' );
 
 sub post_ircd {
@@ -537,6 +555,7 @@ event friends_timeline => sub {
     my ($self) = @_;
 
     DEBUG "[friends_timeline] \n";
+
     my $statuses = $self->twitter->friends_timeline({
         since_id => $self->friends_timeline_since_id
     });
@@ -548,6 +567,8 @@ event friends_timeline => sub {
 
     DEBUG "\tfriends_timeline returned ", scalar @$statuses, " statuses\n";
     $self->friends_timeline_since_id($statuses->[0]{id}) if @$statuses;
+
+    $statuses = $self->merge_replies($statuses);
 
     my $channel = $self->irc_channel;
     my $new_topic;
@@ -579,6 +600,30 @@ event friends_timeline => sub {
     $self->yield('user_timeline') unless $self->last_user_timeline_id;
     $self->yield('throttle_messages') if $self->joined;
 };
+
+sub merge_replies {
+    my ($self, $statuses) = @_;
+    return $statuses unless $self->check_replies;
+
+    # TODO: find a better way to initialize this??
+    unless ( $self->replies_since_id ) {
+        $self->replies_since_id(
+            @$statuses ? $statuses->[-1]{id} : $self->last_user_timeline_id
+         );
+    }
+
+    if ( my $replies = $self->twitter->replies({
+            since_id => $self->replies_since_id }) ) {
+        DEBUG "[merge_replies] ", scalar @$replies, " replies";
+        # TODO: clarification needed: I'm assuming we get replies
+        # from friends in *both* friends_timeline and replies,
+        # so, we need to weed them.
+        my %seen = map { ($_->{id}, $_) } @{$statuses}, @{$replies};
+
+        $statuses = [ sort { $b->{id} <=> $a->{id} } values %seen ];
+    }
+    return $statuses;
+}
 
 event user_timeline => sub {
     my ($self) = @_;
@@ -789,7 +834,7 @@ event cmd_notify => sub {
     my @nicks = split /\s+/, $argstr;
     my $onoff = shift @nicks;
 
-    unless ( $onoff =~ /^on|off$/ ) {
+    unless ( $onoff && $onoff =~ /^on|off$/ ) {
         $self->bot_says("Usage: notify [on|off] nick[ nick [...]]");
         return;
     }
@@ -865,6 +910,22 @@ sub handle_favorite {
     return 0; # unhandled
 };
 
+=item check_replies I<on|off>
+
+Turns reply checking on or off.  See L<checke_replies> in configuration.
+
+=cut
+
+event cmd_check_replies => sub {
+    my ($self, $onoff) = @_[OBJECT, ARG0];
+
+    unless ( $onoff && $onoff =~ /^on|off$/ ) {
+        $self->bot_says("Usage: check_replies [on|off]");
+        return;
+    }
+    $self->check_replies($onoff eq 'on' ? 1 : 0);
+};
+
 =item help
 
 Display a simple help message
@@ -876,6 +937,7 @@ event cmd_help => sub {
     $self->bot_says("Available commands:");
     $self->bot_says(join ' ' => sort qw/
         post follow unfollow block unblock whois notify refresh favorite
+        check_replies
     /);
     $self->bot_says('/msg nick for a direct message.')
 };
