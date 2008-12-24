@@ -883,8 +883,8 @@ event cmd_favorite => sub {
     });
 
     $self->bot_says('Which tweet?');
-    for ( 0..$#{$recent} ) {
-        $self->bot_says("[$_] " . truncstr($recent->[$_]{text}, $self->truncate_to));
+    for ( 1..@$recent ) {
+        $self->bot_says("[$_] " . truncstr($recent->[$_ - 1]{text}, $self->truncate_to));
     }
 };
 
@@ -894,9 +894,9 @@ sub handle_favorite {
     DEBUG "[handle_favorite] $index";
 
     my @favorite_candidates = @{$self->stash->{favorite_candidates} || []};
-    if ( $index =~ /^\d+$/ && $index < @favorite_candidates ) {
+    if ( $index =~ /^\d+$/ && 0 < $index && $index <= @favorite_candidates ) {
         if ( $self->twitter->create_favorite({
-                    id => $favorite_candidates[$index]
+                    id => $favorite_candidates[$index - 1]
                 }) ) {
             $self->post_ircd(daemon_cmd_notice =>
                 $self->irc_botname, $self->irc_channel, 'favorite added');
