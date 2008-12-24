@@ -16,7 +16,7 @@ requires 'Log::Log4perl';
 requires 'POE::Component::TSTP';
 requires 'LWP::UserAgent::POE'         => '0.02';
 requires 'HTML::Entities';
-
+requires 'Text::Truncate';
 
 eval {
     system 'pod2text lib/Net/Twitter/IRC.pm > README';
