@@ -717,6 +717,7 @@ event cmd_follow => sub {
     if ( $self->twitter->relationship_exists($nick, $self->twitter_screen_name) ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $nick);
+        $self->bot_says(qq/Now following $id./);
     }
 };
 
@@ -744,6 +745,8 @@ event cmd_unfollow => sub {
     $self->post_ircd(daemon_cmd_part => $id, $self->irc_channel);
     $self->post_ircd(del_spooked_nick => $id);
     delete $self->users->{$id};
+    $self->bot_says(qq/No longer following $id./);
+    
 };
 
 =item block I<id>
@@ -768,6 +771,8 @@ event cmd_block => sub {
     if ( $self->users->{$id} ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '-v', $id);
+        $self->bot_says(qq/Blocked $id./);
+        
     }
 };
 
@@ -793,6 +798,7 @@ event cmd_unblock => sub {
     if ( $self->users->{id} ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $id);
+        $self->bot_says(qq/Unblocked $id./);
     }
 };
 
@@ -915,7 +921,7 @@ sub handle_favorite {
 
 =item check_replies I<on|off>
 
-Turns reply checking on or off.  See L<checke_replies> in configuration.
+Turns reply checking on or off.  See L<check_replies> in configuration.
 
 =cut
 
