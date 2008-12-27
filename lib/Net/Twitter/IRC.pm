@@ -615,6 +615,9 @@ sub merge_replies {
     if ( my $replies = $self->twitter->replies({
             since_id => $self->replies_since_id }) ) {
         DEBUG "[merge_replies] ", scalar @$replies, " replies";
+
+        $self->replies_since_id($replies->[0]{id});
+
         # TODO: clarification needed: I'm assuming we get replies
         # from friends in *both* friends_timeline and replies,
         # so, we need to weed them.
