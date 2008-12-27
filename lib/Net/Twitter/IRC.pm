@@ -6,6 +6,7 @@ use POE qw(Component::Server::IRC);
 use Net::Twitter;
 use Log::Log4perl qw/:easy/;
 use Email::Valid;
+use Text::Truncate;
 
 # Net::Twitter returns text with encoded HTML entities.  I *think* decoding
 # properly belongs in Net::Twitter.  So, if it gets added, there:
@@ -189,6 +190,40 @@ Set C<echo_posts(1)> to see your own tweets in chronological order with the othe
 
 has echo_posts => ( isa => 'Bool', is => 'rw', default => 0 );
 
+=item favorites_count
+
+How many favorites candidates to display for selection. Defaults to 3.
+
+=cut
+
+has favorites_count => ( isa => 'Int', is => 'ro', default => 3 );
+
+=item truncate_to
+
+When displaying tweets for selection, they will be truncated to this length.
+Defaults to 60.
+
+=cut
+
+has truncate_to         => ( isa => 'Int', is => 'ro', default => 60 );
+
+=item check_replies
+
+Experimental!
+If true, checks for @replies when polling for friends' timeline updates
+and merges them with normal status updates.  Normally, only replies from
+friends are displayed.  This provides the display of @replies from
+users not followed.  It comes at the expense of an additional API call
+on each timeline poll, so keep that in mind when setting L<twitter_retry>.
+Twitter imposes an API call limit of 100 calls per hour.
+
+This also has the effect of adding senders of @replies to the channel,
+even though they are not followed.
+
+=cut
+
+has check_replies => ( isa => 'Bool', is => 'rw', default => 0 );
+
 =back
 
 =cut
@@ -200,6 +235,8 @@ has joined              => ( isa => 'Bool', is => 'rw', default => 0 );
 has stack               => ( isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
 has friends_timeline_since_id => ( isa => 'Int', is => 'rw' );
 has last_user_timeline_id     => ( isa => 'Int', is => 'rw', default => 0 );
+has replies_since_id    => ( isa => 'Int', is => 'rw' );
+has stash               => ( isa => 'Maybe[HashRef]', is => 'rw' );
 
 sub post_ircd {
     my $self = shift;
@@ -365,27 +402,41 @@ event ircd_daemon_quit => sub {
 };
 
 event ircd_daemon_public => sub {
-     my ($self, $user, $channel, $text) = @_[OBJECT, ARG0, ARG1, ARG2];
+    my ($self, $user, $channel, $text) = @_[OBJECT, ARG0, ARG1, ARG2];
 
-     my $nick = ( $user =~ m/^(.*)!/)[0];
-     DEBUG "[ircd_daemon_public] $nick: $text\n";
-     return unless $nick eq $self->irc_nickname;
+    my $nick = ( $user =~ m/^(.*)!/)[0];
+    DEBUG "[ircd_daemon_public] $nick: $text\n";
+    return unless $nick eq $self->irc_nickname;
 
-     # treat "nick: ..." as "post @nick ..."
-     my $nick_alternation = $self->nicks_alternation;
-     if ( $text =~ s/^($nick_alternation):\s+/\@$1 /i ) {
-         $self->yield(cmd_post => $text);
-         return;
-     }
+    # give any command handler a shot
+    if ( $self->stash ) {
+        DEBUG "stash exists...";
+        my $handler = delete $self->stash->{handler};
+        if ( $handler ) {
+            return if $self->$handler($text); # handled
+        }
+        else {
+            ERROR "stash exsits with no handler";
+        }
+        # the user ignored a command completion request, kill it
+        $self->stash(undef);
+    }
 
-     my ($command, $arg) = split /\s/, $text, 2;
-     if ( $command =~ /^\w+$/ ) {
-         $arg =~ s/\s+$// if $arg;
-         $self->yield("cmd_$command", $arg);
-     }
-     else {
-         $self->bot_says(qq/That doesn't look like a command. Try "help"./);
-     }
+    # treat "nick: ..." as "post @nick ..."
+    my $nick_alternation = $self->nicks_alternation;
+    if ( $text =~ s/^($nick_alternation):\s+/\@$1 /i ) {
+        $self->yield(cmd_post => $text);
+        return;
+    }
+
+    my ($command, $arg) = split /\s/, $text, 2;
+    if ( $command =~ /^\w+$/ ) {
+        $arg =~ s/\s+$// if $arg;
+        $self->yield("cmd_$command", $arg);
+    }
+    else {
+        $self->bot_says(qq/That doesn't look like a command. Try "help"./);
+    }
 };
 
 event ircd_daemon_privmsg => sub {
@@ -504,6 +555,7 @@ event friends_timeline => sub {
     my ($self) = @_;
 
     DEBUG "[friends_timeline] \n";
+
     my $statuses = $self->twitter->friends_timeline({
         since_id => $self->friends_timeline_since_id
     });
@@ -515,6 +567,8 @@ event friends_timeline => sub {
 
     DEBUG "\tfriends_timeline returned ", scalar @$statuses, " statuses\n";
     $self->friends_timeline_since_id($statuses->[0]{id}) if @$statuses;
+
+    $statuses = $self->merge_replies($statuses);
 
     my $channel = $self->irc_channel;
     my $new_topic;
@@ -546,6 +600,33 @@ event friends_timeline => sub {
     $self->yield('user_timeline') unless $self->last_user_timeline_id;
     $self->yield('throttle_messages') if $self->joined;
 };
+
+sub merge_replies {
+    my ($self, $statuses) = @_;
+    return $statuses unless $self->check_replies;
+
+    # TODO: find a better way to initialize this??
+    unless ( $self->replies_since_id ) {
+        $self->replies_since_id(
+            @$statuses ? $statuses->[-1]{id} : $self->last_user_timeline_id
+         );
+    }
+
+    my $replies = $self->twitter->replies({ since_id => $self->replies_since_id });
+    if ( $replies && @$replies ) {
+        DEBUG "[merge_replies] ", scalar @$replies, " replies";
+
+        $self->replies_since_id($replies->[0]{id});
+
+        # TODO: clarification needed: I'm assuming we get replies
+        # from friends in *both* friends_timeline and replies,
+        # so, we need to weed them.
+        my %seen = map { ($_->{id}, $_) } @{$statuses}, @{$replies};
+
+        $statuses = [ sort { $b->{id} <=> $a->{id} } values %seen ];
+    }
+    return $statuses;
+}
 
 event user_timeline => sub {
     my ($self) = @_;
@@ -756,7 +837,7 @@ event cmd_notify => sub {
     my @nicks = split /\s+/, $argstr;
     my $onoff = shift @nicks;
 
-    unless ( $onoff =~ /^on|off$/ ) {
+    unless ( $onoff && $onoff =~ /^on|off$/ ) {
         $self->bot_says("Usage: notify [on|off] nick[ nick [...]]");
         return;
     }
@@ -769,6 +850,85 @@ event cmd_notify => sub {
     }
 };
 
+=item favorite I<friend> [I<count>]
+
+Mark I<friend>'s tweet as a favorite.  Optionally, specify the number of tweets
+to display for selection with I<count> (Defaluts to 3.)
+
+=cut
+
+event cmd_favorite => sub {
+    my ($self, $args) = @_[OBJECT, ARG0];
+
+    my ($nick, $count) = split /\s+/, $args;
+    $count ||= $self->favorites_count;
+
+    DEBUG "[cmd_favorite] $nick";
+
+    unless ( $self->users->{$nick} ) {
+        $self->bot_says("You're not following $nick.");
+        return;
+    }
+
+    my $recent = $self->twitter->user_timeline({ id => $nick, count => $count });
+    unless ( $recent ) {
+        $self->twitter_error('user_timeline failed');
+        return;
+    }
+    if ( @$recent == 0 ) {
+        $self->bot_says("$nick has no recent tweets");
+        return;
+    }
+
+    $self->stash({
+        favorite_candidates => [ map $_->{id}, @$recent ],
+        handler => 'handle_favorite',
+    });
+
+    $self->bot_says('Which tweet?');
+    for ( 1..@$recent ) {
+        $self->bot_says("[$_] " . truncstr($recent->[$_ - 1]{text}, $self->truncate_to));
+    }
+};
+
+sub handle_favorite {
+    my ($self, $index) = @_;
+
+    DEBUG "[handle_favorite] $index";
+
+    my @favorite_candidates = @{$self->stash->{favorite_candidates} || []};
+    if ( $index =~ /^\d+$/ && 0 < $index && $index <= @favorite_candidates ) {
+        if ( $self->twitter->create_favorite({
+                    id => $favorite_candidates[$index - 1]
+                }) ) {
+            $self->post_ircd(daemon_cmd_notice =>
+                $self->irc_botname, $self->irc_channel, 'favorite added');
+        }
+        else {
+            $self->bot_says('create_favorite failed');
+        }
+        $self->stash(undef);
+        return 1; # handled
+    }
+    return 0; # unhandled
+};
+
+=item check_replies I<on|off>
+
+Turns reply checking on or off.  See L<checke_replies> in configuration.
+
+=cut
+
+event cmd_check_replies => sub {
+    my ($self, $onoff) = @_[OBJECT, ARG0];
+
+    unless ( $onoff && $onoff =~ /^on|off$/ ) {
+        $self->bot_says("Usage: check_replies [on|off]");
+        return;
+    }
+    $self->check_replies($onoff eq 'on' ? 1 : 0);
+};
+
 =item help
 
 Display a simple help message
@@ -778,7 +938,10 @@ Display a simple help message
 event cmd_help => sub {
     my ($self, $argstr)=@_[OBJECT, ARG0];
     $self->bot_says("Available commands:");
-    $self->bot_says("post follow unfollow block unblock whois notify refresh");
+    $self->bot_says(join ' ' => sort qw/
+        post follow unfollow block unblock whois notify refresh favorite
+        check_replies
+    /);
     $self->bot_says('/msg nick for a direct message.')
 };
 
