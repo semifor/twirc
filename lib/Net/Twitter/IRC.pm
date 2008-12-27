@@ -612,8 +612,8 @@ sub merge_replies {
          );
     }
 
-    if ( my $replies = $self->twitter->replies({
-            since_id => $self->replies_since_id }) ) {
+    my $replies = $self->twitter->replies({ since_id => $self->replies_since_id });
+    if ( $replies && @$replies ) {
         DEBUG "[merge_replies] ", scalar @$replies, " replies";
 
         $self->replies_since_id($replies->[0]{id});
