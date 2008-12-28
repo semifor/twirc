@@ -853,7 +853,7 @@ event cmd_notify => sub {
 =item favorite I<friend> [I<count>]
 
 Mark I<friend>'s tweet as a favorite.  Optionally, specify the number of tweets
-to display for selection with I<count> (Defaluts to 3.)
+to display for selection with I<count> (Defaults to 3.)
 
 =cut
 

@@ -8,6 +8,8 @@ name     'Net-Twitter-IRC';
 perl_version '5.008001';
 all_from 'lib/Net/Twitter/IRC.pm';
 
+install_script  'bin/twirc';
+
 requires 'MooseX::POE'                 => 0;
 requires 'Net::Twitter'                => '1.22';
 requires 'Email::Valid'                => 0;
