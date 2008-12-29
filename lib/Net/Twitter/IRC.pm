@@ -451,7 +451,7 @@ event ircd_daemon_privmsg => sub {
         return;
     }
 
-    unless ( $self->twitter->new_direct_message({ user => $target_nick, text => $text }) ) {
+    unless ( eval { $self->twitter->new_direct_message({ user => $target_nick, text => $text }) } ) {
         $self->twitter_error("new_direct_message failed.");
     }
 };
@@ -490,7 +490,7 @@ event friends => sub {
 
     DEBUG "[twitter:friends] calling...\n";
     $page ||= 1;
-    while ( my $friends = $self->twitter->friends({page => $page}) ) {
+    while ( my $friends = eval { $self->twitter->friends({page => $page}) } ) {
         unless ( $friends ) {
             $self->twitter_error("request for friends failed; retrying in $retry seconds");
             $_[KERNEL]->delay(friends => $retry);
@@ -527,7 +527,7 @@ event followers => sub {
 
     DEBUG "[twitter:followers] calling...\n";
     $page ||= 1;
-    while ( my $followers = $self->twitter->followers({page => $page}) ) {
+    while ( my $followers = eval { $self->twitter->followers({page => $page}) } ) {
         DEBUG "\tpage: $page\n";
         unless ( $followers ) {
             $self->twitter_error("request for followers failed; retrying in $retry seconds");
@@ -556,9 +556,11 @@ event friends_timeline => sub {
 
     DEBUG "[friends_timeline] \n";
 
-    my $statuses = $self->twitter->friends_timeline({
-        since_id => $self->friends_timeline_since_id
-    });
+    my $statuses = eval {
+        $self->twitter->friends_timeline({
+            since_id => $self->friends_timeline_since_id
+        });
+    };
 
     unless ( $statuses ) {
         $self->twitter_error('friends_timeline request failed');
@@ -612,7 +614,7 @@ sub merge_replies {
          );
     }
 
-    my $replies = $self->twitter->replies({ since_id => $self->replies_since_id });
+    my $replies = eval {$self->twitter->replies({ since_id => $self->replies_since_id }) };
     if ( $replies && @$replies ) {
         DEBUG "[merge_replies] ", scalar @$replies, " replies";
 
@@ -632,7 +634,7 @@ event user_timeline => sub {
     my ($self) = @_;
 
     DEBUG "[user_timetline] calling...\n";
-    my $statuses = $self->twitter->user_timeline({ count => 1}) || return;
+    my $statuses = eval { $self->twitter->user_timeline({ count => 1}) } || return;
     unless ( $statuses ) {
         $self->twitter_error('user_timeline request failed; retrying in 60 seconds');
         $_[KERNEL]->delay(user_timeline => 60);
@@ -674,7 +676,7 @@ event cmd_post => sub {
         return;
     }
 
-    my $status = $self->twitter->update($text);
+    my $status = eval { $self->twitter->update($text) };
     unless ( $status ) {
         $self->twitter_error('status update failed; try again later');
         return;
@@ -703,7 +705,7 @@ event cmd_follow => sub {
         return;
     }
 
-    my $friend = $self->twitter->create_friend($id);
+    my $friend = eval { $self->twitter->create_friend($id) };
     unless ( $friend ) {
         $self->twitter_error('create_friend failed');
         return;
@@ -714,7 +716,7 @@ event cmd_follow => sub {
     $self->post_ircd(daemon_cmd_join => $name, $self->irc_channel);
     $self->users->{$nick} = $friend;
 
-    if ( $self->twitter->relationship_exists($nick, $self->twitter_screen_name) ) {
+    if ( eval { $self->twitter->relationship_exists($nick, $self->twitter_screen_name) } ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $nick);
     }
@@ -735,7 +737,7 @@ event cmd_unfollow => sub {
         return;
     }
 
-    my $friend = $self->twitter->destroy_friend($id);
+    my $friend = eval { $self->twitter->destroy_friend($id) };
     unless ( $friend ) {
         $self->twitter_error('destroy_friend failed');
         return;
@@ -760,7 +762,7 @@ event cmd_block => sub {
         return;
     }
 
-    unless ( $self->twitter->create_block($id) ) {
+    unless ( eval { $self->twitter->create_block($id) } ) {
         $self->twitter_error('create_block failed');
         return;
     }
@@ -785,7 +787,7 @@ event cmd_unblock => sub {
         return;
     }
 
-    unless ( $self->twitter->destroy_block($id) ) {
+    unless ( eval { $self->twitter->destroy_block($id) } ) {
         $self->twitter_error('destroy_block failed');
         return;
     }
@@ -812,7 +814,7 @@ event cmd_whois => sub {
     unless ( $user ) {
         DEBUG "\t $id not in users; fetching";
         my $arg = Email::Valid->address($id) ? { email => $id } : { id => $id };
-        $user = $self->twitter->show_user($arg);
+        $user = eval { $self->twitter->show_user($arg) };
     }
     if ( $user ) {
         $self->bot_says("$user->{screen_name} [$user->{id}]: $user->{name}, $user->{location}");
@@ -844,7 +846,7 @@ event cmd_notify => sub {
 
     my $method = $onoff eq 'on' ? 'enable_notifications' : 'disable_notifications';
     for my $nick ( @nicks ) {
-        unless ( $self->twitter->$method({ id => $nick }) ) {
+        unless ( eval { $self->twitter->$method({ id => $nick }) } ) {
             $self->twitter_error("notify $onoff failed for $nick");
         }
     }
@@ -870,7 +872,7 @@ event cmd_favorite => sub {
         return;
     }
 
-    my $recent = $self->twitter->user_timeline({ id => $nick, count => $count });
+    my $recent = eval { $self->twitter->user_timeline({ id => $nick, count => $count }) };
     unless ( $recent ) {
         $self->twitter_error('user_timeline failed');
         return;
@@ -898,9 +900,9 @@ sub handle_favorite {
 
     my @favorite_candidates = @{$self->stash->{favorite_candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @favorite_candidates ) {
-        if ( $self->twitter->create_favorite({
+        if ( eval { $self->twitter->create_favorite({
                     id => $favorite_candidates[$index - 1]
-                }) ) {
+                }) } ) {
             $self->post_ircd(daemon_cmd_notice =>
                 $self->irc_botname, $self->irc_channel, 'favorite added');
         }
