@@ -19,6 +19,9 @@ requires 'POE::Component::TSTP';
 requires 'LWP::UserAgent::POE'         => '0.02';
 requires 'HTML::Entities';
 requires 'Text::Truncate';
+requires 'MooseX::SimpleConfig';
+requires 'MooseX::Getopt';
+requires 'MooseX::Log::Log4perl::Easy';
 
 eval {
     system 'pod2text lib/Net/Twitter/IRC.pm > README';
