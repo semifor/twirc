@@ -8,6 +8,14 @@ use Log::Log4perl qw/:easy/;
 use Email::Valid;
 use Text::Truncate;
 
+with 'MooseX::SimpleConfig';
+with 'MooseX::Getopt';
+with 'MooseX::Log::Log4perl::Easy';
+
+BEGIN {
+    Log::Log4perl->easy_init();
+}
+
 # Net::Twitter returns text with encoded HTML entities.  I *think* decoding
 # properly belongs in Net::Twitter.  So, if it gets added, there:
 # TODO: remove HTML::Entities and decode_entities calls.
@@ -228,15 +236,24 @@ has check_replies => ( isa => 'Bool', is => 'rw', default => 0 );
 
 =cut
 
-has ircd                => ( isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1 );
-has twitter             => ( isa => 'Net::Twitter', is => 'rw' );
-has users               => ( isa => 'HashRef[Str]', is => 'rw', lazy => 1, default => sub { {} } );
-has joined              => ( isa => 'Bool', is => 'rw', default => 0 );
-has stack               => ( isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
-has friends_timeline_since_id => ( isa => 'Int', is => 'rw' );
-has last_user_timeline_id     => ( isa => 'Int', is => 'rw', default => 0 );
-has replies_since_id    => ( isa => 'Int', is => 'rw' );
-has stash               => ( isa => 'Maybe[HashRef]', is => 'rw' );
+has _ircd => (
+       accessor => 'ircd', isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1 );
+has _twitter => (
+       accessor => 'twitter',  isa => 'Net::Twitter', is => 'rw' );
+has _users => (
+       accessor => 'users', isa => 'HashRef[Str]', is => 'rw', lazy => 1, default => sub { {} } );
+has _joined => (
+       accessor => 'joined', isa => 'Bool', is => 'rw', default => 0 );
+has _stack => (
+       accessor => 'stack', isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
+has _friends_timeline_since_id => (
+       accessor => 'friends_timeline_since_id', isa => 'Int', is => 'rw' );
+has _last_user_timeline_id => (
+       accessor => 'last_user_timeline_id', isa => 'Int', is => 'rw', default => 0 );
+has _replies_since_id => (
+       accessor => 'replies_since_id', isa => 'Int', is => 'rw' );
+has _stash => (
+       accessor => 'stash', isa => 'Maybe[HashRef]', is => 'rw' );
 
 sub post_ircd {
     my $self = shift;

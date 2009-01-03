@@ -2,22 +2,10 @@
 use warnings;
 use strict;
 use Log::Log4perl qw/:easy :levels/;
-use Getopt::Long;
 use POE qw(Component::TSTP);
 use YAML;
 use Net::Twitter::IRC;
 
-GetOptions('-c=s' => \my $conf_file);
-$conf_file or die "Usage: twitirc.pl -c=twitirc.yml\n";
-
-my $conf = YAML::LoadFile($conf_file);
-
-if ( $conf->{log_level} ) {
-    Log::Log4perl->easy_init(
-        Log::Log4perl::Level::to_priority(delete $conf->{log_level})
-    );
-}
-
-Net::Twitter::IRC->new($conf);
+my $app = Net::Twitter::IRC->new_with_options();
 
 POE::Kernel->run;
