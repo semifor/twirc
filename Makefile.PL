@@ -20,7 +20,7 @@ requires 'LWP::UserAgent::POE'         => '0.02';
 requires 'HTML::Entities';
 requires 'Text::Truncate';
 requires 'MooseX::SimpleConfig';
-requires 'MooseX::Getopt';
+requires 'MooseX::Getopt'              => '0.15';
 requires 'MooseX::Log::Log4perl::Easy';
 
 eval {
