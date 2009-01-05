@@ -14,7 +14,7 @@ with 'MooseX::Log::Log4perl';
 # TODO: remove HTML::Entities and decode_entities calls.
 use HTML::Entities;
 
-our $VERSION='0.02_4';
+our $VERSION = '0.03';
 
 =head1 NAME
 
