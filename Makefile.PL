@@ -4,9 +4,9 @@ use warnings;
 
 use 5.008001;
 
-name     'Net-Twitter-IRC';
+name     'POE-Component-Server-Twirc';
 perl_version '5.008001';
-all_from 'lib/Net/Twitter/IRC.pm';
+all_from 'lib/POE/Component/Server/Twirc.pm';
 
 install_script  'bin/twirc';
 
@@ -22,9 +22,10 @@ requires 'Text::Truncate';
 requires 'MooseX::SimpleConfig';
 requires 'MooseX::Getopt'              => '0.15';
 requires 'MooseX::Log::Log4perl::Easy';
+requires 'Proc::Daemon';
 
 eval {
-    system 'pod2text lib/Net/Twitter/IRC.pm > README';
+    system 'pod2text lib/POE/Component/Server/Twirc.pm > README';
 };
 
 auto_install;

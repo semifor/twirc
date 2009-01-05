@@ -14,11 +14,11 @@ plan skip_all => 'Test::Pod::Coverage 1.04 required' if $@;
 plan skip_all => 'set TEST_POD to enable this test'
   unless ($ENV{TEST_POD} || -e 'MANIFEST.SKIP');
 
-plan tests => 1;
+plan tests => 2;
 
 # TODO: I really should add documentation
 pod_coverage_ok(
-    'Net::Twitter::IRC',
+    'POE::Component::Server::Twirc',
     { trustme => [ map qr/^$_$/, qw/
         DEFAULT
         START
@@ -31,5 +31,10 @@ pod_coverage_ok(
         twitter_error
         /],
     },
-    "Net::Twitter::IRC POD coverage"
+    'POE::Component::Server::Twirc coverage'
+);
+
+pod_coverage_ok(
+    'App::Twirc',
+    'App::Twirc coverage'
 );

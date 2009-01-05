@@ -1,4 +1,6 @@
 0.02_5
+    - Renamed Net::Twitter::IRC to POE::Component::Server::Twirc
+    - added backgrounding (--background)
     - temporarily work around JSON::Any fault on HTTP status 500
     - No logging by default; config option log_level for noise
     - Renamed twitirc.pl to twirc

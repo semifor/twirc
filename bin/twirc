@@ -1,11 +1,7 @@
 #!/usr/bin/perl
 use warnings;
 use strict;
-use Log::Log4perl qw/:easy :levels/;
-use POE qw(Component::TSTP);
-use YAML;
-use Net::Twitter::IRC;
+use App::Twirc;
 
-my $app = Net::Twitter::IRC->new_with_options();
-
-POE::Kernel->run;
+my $app = App::Twirc->new_with_options();
+$app->run;

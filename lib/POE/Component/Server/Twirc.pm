@@ -1,20 +1,13 @@
-package Net::Twitter::IRC;
+package POE::Component::Server::Twirc;
 use MooseX::POE;
 
 use LWP::UserAgent::POE;
 use POE qw(Component::Server::IRC);
 use Net::Twitter;
-use Log::Log4perl qw/:easy/;
 use Email::Valid;
 use Text::Truncate;
 
-with 'MooseX::SimpleConfig';
-with 'MooseX::Getopt';
-with 'MooseX::Log::Log4perl::Easy';
-
-BEGIN {
-    Log::Log4perl->easy_init();
-}
+with 'MooseX::Log::Log4perl';
 
 # Net::Twitter returns text with encoded HTML entities.  I *think* decoding
 # properly belongs in Net::Twitter.  So, if it gets added, there:
@@ -25,13 +18,13 @@ our $VERSION='0.02_4';
 
 =head1 NAME
 
-Net::Twitter::IRC - Twitter/IRC gateway
+POE::Component::Server::Twirc - Twitter/IRC gateway
 
 =head1 SYNOPSIS
 
-    use Net::Twitter::IRC;
+    use POE::Component::Server::Twirc;
 
-    Net::Twitter::IRC->new(
+    POE::Component::Server::Twirc->new(
         irc_nickname        => $my_irc_nickname,
         twitter_username    => $my_twitter_username,
         twitter_password    => $my_twitter_password,
@@ -42,7 +35,7 @@ Net::Twitter::IRC - Twitter/IRC gateway
 
 =head1 DESCRIPTION
 
-C<Net::Twitter::IRC> provides an IRC/Twitter gateway.  Twitter friends are
+C<POE::Component::Server::Twirc> provides an IRC/Twitter gateway.  Twitter friends are
 added to a channel and messages they post on twitter appear as channel
 messages in IRC.  The IRC interface supports several Twitter features,
 including posting status updates, following and un-following Twitter feeds,
@@ -189,7 +182,7 @@ has twitter_alias       => ( isa => 'Str', is => 'ro', default => 'me' );
 
 =item echo_posts
 
-If false, posts sent by L<Net::Twitter::IRC> will not be redisplayed when received
+If false, posts sent by L<POE::Component::Server::Twirc> will not be redisplayed when received
 is the friends_timeline.  Defaults to false.
 
 Set C<echo_posts(1)> to see your own tweets in chronological order with the others.
@@ -302,7 +295,7 @@ sub START {
                 network    => 'SimpleNET'
             },
             inline_states => {
-                _stop  => sub { DEBUG '[ircd:stop]' },
+                _stop  => sub { $self->log->debug('[ircd:stop]') },
             },
         )
     );
@@ -344,16 +337,16 @@ sub DEFAULT {
 # Without detaching the ircd child session, the application will not
 # shut down.  Bug in PoCo::Server::IRC?
 event _child => sub {
-    my ($kernel, $event, $child) = @_[KERNEL, ARG0, ARG1];
+    my ($self, $kernel, $event, $child) = @_[OBJECT, KERNEL, ARG0, ARG1];
 
-    DEBUG "[_child] $event $child";
+    $self->log->debug("[_child] $event $child");
     $kernel->detach_child($child) if $event eq 'create';
 };
 
-event 'shutdown' => sub {
+event poco_shutdown => sub {
     my ($self) = @_;
 
-    DEBUG "[shutdown]\n";
+    $self->log->debug("[poco_shutdown]\n");
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
@@ -366,11 +359,11 @@ event 'shutdown' => sub {
 event ircd_daemon_nick => sub {
     my ($self, $sender, $nick, $new_nick, $host) = @_[OBJECT, SENDER, ARG0, ARG1, ARG5];
 
-    DEBUG "[ircd_daemon_nick] $nick, $new_nick, $host\n";
+    $self->log->debug("[ircd_daemon_nick] $nick, $new_nick, $host\n");
 
     return if $nick eq $self->irc_botname;
 
-    DEBUG "\tnick = $nick\n";
+    $self->log->debug("\tnick = $nick\n");
 
     # Abuse!  Calling the private implementation of ircd to force-join the connecting
     # user to the twitter channel. ircd set's it's heap to $self: see ircd's perldoc.
@@ -380,18 +373,18 @@ event ircd_daemon_nick => sub {
 event ircd_daemon_join => sub {
     my($self, $sender, $user, $ch) = @_[OBJECT, SENDER, ARG0, ARG1];
 
-    DEBUG "[ircd_daemon_join] $user, $ch\n";
+    $self->log->debug("[ircd_daemon_join] $user, $ch\n");
     return unless my($nick) = $user =~ /^([^!]+)!/;
     return if $self->users->{$nick};
     return if $nick eq $self->irc_botname;
 
     if ( $ch eq $self->irc_channel ) {
         $self->joined(1);
-        DEBUG "\tjoined!\n";
+        $self->log->debug("\tjoined!\n");
         $self->yield('throttle_messages');
         return;
     }
-    DEBUG "\t** part **\n";
+    $self->log->debug("\t** part **\n");
     # only one channel allowed
     $sender->get_heap()->_daemon_cmd_part($nick, $ch);
 };
@@ -409,31 +402,31 @@ event ircd_daemon_part => sub {
 event ircd_daemon_quit => sub {
     my($self, $user) = @_[OBJECT, ARG0];
 
-    DEBUG "[ircd_daemon_quit]\n";
+    $self->log->debug("[ircd_daemon_quit]\n");
     return unless my($nick) = $user =~ /^([^!]+)!/;
     return if $self->users->{$nick};
     return if $nick eq $self->irc_botname;
 
     $self->joined(0);
-    $self->yield('shutdown');
+    $self->yield('poco_shutdown');
 };
 
 event ircd_daemon_public => sub {
     my ($self, $user, $channel, $text) = @_[OBJECT, ARG0, ARG1, ARG2];
 
     my $nick = ( $user =~ m/^(.*)!/)[0];
-    DEBUG "[ircd_daemon_public] $nick: $text\n";
+    $self->log->debug("[ircd_daemon_public] $nick: $text\n");
     return unless $nick eq $self->irc_nickname;
 
     # give any command handler a shot
     if ( $self->stash ) {
-        DEBUG "stash exists...";
+        $self->log->debug("stash exists...");
         my $handler = delete $self->stash->{handler};
         if ( $handler ) {
             return if $self->$handler($text); # handled
         }
         else {
-            ERROR "stash exsits with no handler";
+            $self->log->error("stash exsits with no handler");
         }
         # the user ignored a command completion request, kill it
         $self->stash(undef);
@@ -488,7 +481,7 @@ event delay_friends_timeline => sub {
 event throttle_messages => sub {
     my ($self) = @_;
 
-    DEBUG "[throttle_messages] ", scalar @{$self->stack}, " messages\n";
+    $self->log->debug("[throttle_messages] ", scalar @{$self->stack}, " messages\n");
 
     for my $entry ( @{$self->stack} ) {
         my @lines = split /\r?\n/, $entry->{text};
@@ -505,7 +498,7 @@ event friends => sub {
 
     my $retry = $self->twitter_retry_on_error;
 
-    DEBUG "[twitter:friends] calling...\n";
+    $self->log->debug("[twitter:friends] calling...\n");
     $page ||= 1;
     while ( my $friends = eval { $self->twitter->friends({page => $page}) } ) {
         unless ( $friends ) {
@@ -515,7 +508,7 @@ event friends => sub {
         }
         ++$page;
 
-        DEBUG "\tfriends returned ", scalar @$friends, " friends\n";
+        $self->log->debug("\tfriends returned ", scalar @$friends, " friends\n");
 
         # Current API gets 100 friends per page.  If we have exactly 100 friends
         # we have to try again with page=2 and we should get (I'm assuming, here)
@@ -542,10 +535,10 @@ event followers => sub {
 
     my $retry = $self->twitter_retry_on_error;
 
-    DEBUG "[twitter:followers] calling...\n";
+    $self->log->debug("[twitter:followers] calling...\n");
     $page ||= 1;
     while ( my $followers = eval { $self->twitter->followers({page => $page}) } ) {
-        DEBUG "\tpage: $page\n";
+        $self->log->debug("\tpage: $page\n");
         unless ( $followers ) {
             $self->twitter_error("request for followers failed; retrying in $retry seconds");
             $_[KERNEL]->delay(followers => $retry, $page);
@@ -553,7 +546,7 @@ event followers => sub {
         }
         ++$page;
 
-        DEBUG "\tfollowers returned ", scalar @$followers, " followers\n";
+        $self->log->debug("\tfollowers returned ", scalar @$followers, " followers\n");
 
         # see comments for event friends
         last unless @$followers;
@@ -571,7 +564,7 @@ event followers => sub {
 event friends_timeline => sub {
     my ($self) = @_;
 
-    DEBUG "[friends_timeline] \n";
+    $self->log->debug("[friends_timeline] \n");
 
     my $statuses = eval {
         $self->twitter->friends_timeline({
@@ -584,7 +577,7 @@ event friends_timeline => sub {
         return;
     }
 
-    DEBUG "\tfriends_timeline returned ", scalar @$statuses, " statuses\n";
+    $self->log->debug("\tfriends_timeline returned ", scalar @$statuses, " statuses\n");
     $self->friends_timeline_since_id($statuses->[0]{id}) if @$statuses;
 
     $statuses = $self->merge_replies($statuses);
@@ -597,7 +590,7 @@ event friends_timeline => sub {
 
         # alias our twitter_name if configured
         # (to avoid a collision in case our twitter screen name and irc nick are the same)
-        DEBUG "\t\$name = $name, \$twitter_name = ", $self->twitter_screen_name;
+        $self->log->debug("\t\$name = $name, \$twitter_name = "), $self->twitter_screen_name;
 
         # TODO: is this even necessary? Can we just send a privmsg from a real user?
         if ( $name eq $self->twitter_screen_name ) {
@@ -612,7 +605,7 @@ event friends_timeline => sub {
         }
         $self->users->{$name} = $status->{user};
 
-        DEBUG "\t{ $name, $text }\n";
+        $self->log->debug("\t{ $name, $text }\n");
         push @{ $self->stack }, { name => $name, text => $text }
     }
     $self->set_topic($new_topic) if $new_topic;
@@ -633,7 +626,7 @@ sub merge_replies {
 
     my $replies = eval {$self->twitter->replies({ since_id => $self->replies_since_id }) };
     if ( $replies && @$replies ) {
-        DEBUG "[merge_replies] ", scalar @$replies, " replies";
+        $self->log->debug("[merge_replies] ", scalar @$replies, " replies");
 
         $self->replies_since_id($replies->[0]{id});
 
@@ -650,14 +643,14 @@ sub merge_replies {
 event user_timeline => sub {
     my ($self) = @_;
 
-    DEBUG "[user_timetline] calling...\n";
+    $self->log->debug("[user_timetline] calling...\n");
     my $statuses = eval { $self->twitter->user_timeline({ count => 1}) } || return;
     unless ( $statuses ) {
         $self->twitter_error('user_timeline request failed; retrying in 60 seconds');
         $_[KERNEL]->delay(user_timeline => 60);
     }
 
-    DEBUG "\turser_timeline returned\n";
+    $self->log->debug("\turser_timeline returned\n");
     $self->set_topic($statuses->[0]);
 };
 
@@ -679,14 +672,14 @@ Where the arguments, if any, depend upon the command.
 
 Post a status update.  E.g.,
 
-    post Now cooking tweets with Net::Twitter::IRC!
+    post Now cooking tweets with twirc!
 
 =cut
 
 event cmd_post => sub {
     my ($self, $text) = @_[OBJECT, ARG0];
 
-    DEBUG "[cmd_post_status]";
+    $self->log->debug("[cmd_post_status]");
 
     if ( (my $n = length($text) - 140) > 0 ) {
         $self->bot_says("Message not sent; $n characters too long. Limit is 140 characters.");
@@ -699,7 +692,7 @@ event cmd_post => sub {
         return;
     }
 
-    DEBUG "\tupdate returned $status\n";
+    $self->log->debug("\tupdate returned $status\n");
 
     $self->set_topic($status);
 };
@@ -825,11 +818,11 @@ description.
 event cmd_whois => sub {
     my ($self, $id) = @_[OBJECT, ARG0];
 
-    DEBUG "[cmd_whois] $id";
+    $self->log->debug("[cmd_whois] $id");
 
     my $user = $self->users->{$id};
     unless ( $user ) {
-        DEBUG "\t $id not in users; fetching";
+        $self->log->debug("\t $id not in users; fetching");
         my $arg = Email::Valid->address($id) ? { email => $id } : { id => $id };
         $user = eval { $self->twitter->show_user($arg) };
     }
@@ -882,7 +875,7 @@ event cmd_favorite => sub {
     my ($nick, $count) = split /\s+/, $args;
     $count ||= $self->favorites_count;
 
-    DEBUG "[cmd_favorite] $nick";
+    $self->log->debug("[cmd_favorite] $nick");
 
     unless ( $self->users->{$nick} ) {
         $self->bot_says("You're not following $nick.");
@@ -913,7 +906,7 @@ event cmd_favorite => sub {
 sub handle_favorite {
     my ($self, $index) = @_;
 
-    DEBUG "[handle_favorite] $index";
+    $self->log->debug("[handle_favorite] $index");
 
     my @favorite_candidates = @{$self->stash->{favorite_candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @favorite_candidates ) {
@@ -979,6 +972,10 @@ __END__
 Sends a direct message to Twitter user I<id> using an IRC private message.
 
 =back
+
+=head1 SEE ALSO
+
+L<App::Twirc>
 
 =head1 AUTHOR
 

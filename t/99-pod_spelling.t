@@ -17,6 +17,7 @@ all_pod_files_spelling_ok();
 __DATA__
 API
 bot's
+configfile
 IRC
 irc
 Marc
