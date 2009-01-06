@@ -6,6 +6,7 @@ use POE qw(Component::Server::IRC);
 use Net::Twitter;
 use Email::Valid;
 use Text::Truncate;
+use App::Twirc::LogAppender;
 
 with 'MooseX::Log::Log4perl';
 
@@ -314,6 +315,17 @@ sub START {
         { nick => $self->irc_botname, ircname => $self->irc_botircname }
     );
     $self->post_ircd(daemon_cmd_join => $self->irc_botname, $self->irc_channel);
+
+    # logging
+    $self->post_ircd(daemon_cmd_join => $self->irc_botname, '&twirc-log');
+    my $logger = Log::Log4perl->get_logger('');
+    my $appender = Log::Log4perl::Appender->new(
+        'App::Twirc::LogAppender',
+        ircd        => $self->ircd,
+        irc_botname => $self->irc_botname,
+    );
+    $logger->add_appender($appender);
+
     $self->yield('friends');
     $self->yield('delay_friends_timeline');
 
@@ -385,9 +397,9 @@ event ircd_daemon_join => sub {
         $self->yield('throttle_messages');
         return;
     }
-    $self->log->debug("\t** part **\n");
+    #$self->log->debug("\t** part **\n");
     # only one channel allowed
-    $sender->get_heap()->_daemon_cmd_part($nick, $ch);
+    #$sender->get_heap()->_daemon_cmd_part($nick, $ch);
 };
 
 event ircd_daemon_part => sub {
