@@ -215,7 +215,7 @@ If true, checks for @replies when polling for friends' timeline updates
 and merges them with normal status updates.  Normally, only replies from
 friends are displayed.  This provides the display of @replies from
 users not followed.  It comes at the expense of an additional API call
-on each timeline poll, so keep that in mind when setting L<twitter_retry>.
+on each timeline poll, so keep that in mind when setting L</"twitter_retry">.
 Twitter imposes an API call limit of 100 calls per hour.
 
 This also has the effect of adding senders of @replies to the channel,
@@ -927,7 +927,7 @@ sub handle_favorite {
 
 =item check_replies I<on|off>
 
-Turns reply checking on or off.  See L<checke_replies> in configuration.
+Turns reply checking on or off.  See L</"check_replies"> in configuration.
 
 =cut
 
