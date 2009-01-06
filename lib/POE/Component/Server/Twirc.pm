@@ -319,9 +319,10 @@ sub START {
 
     $self->twitter(Net::Twitter->new(
         useragent_class => 'LWP::UserAgent::POE',
-        username => $self->twitter_username,
-        password => $self->twitter_password,
-        useragent => 'TwitIrc (alpha)',
+        username  => $self->twitter_username,
+        password  => $self->twitter_password,
+        useragent => "twirc/$VERSION",
+        source    => 'twircgw',
     ));
 
     return $self;
