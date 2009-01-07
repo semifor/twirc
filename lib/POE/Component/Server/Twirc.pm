@@ -6,6 +6,7 @@ use POE qw(Component::Server::IRC);
 use Net::Twitter;
 use Email::Valid;
 use Text::Truncate;
+use POE::Component::Server::Twirc::LogAppender;
 
 with 'MooseX::Log::Log4perl';
 
@@ -225,6 +226,14 @@ even though they are not followed.
 
 has check_replies => ( isa => 'Bool', is => 'rw', default => 0 );
 
+=item log_channel
+
+If specified, twirc will post log messages to this channel.
+
+=cut
+
+has log_channel => ( isa => 'Str', is => 'ro' );
+
 =back
 
 =cut
@@ -314,6 +323,20 @@ sub START {
         { nick => $self->irc_botname, ircname => $self->irc_botircname }
     );
     $self->post_ircd(daemon_cmd_join => $self->irc_botname, $self->irc_channel);
+
+    # logging
+    if ( $self->log_channel ) {
+        $self->post_ircd(daemon_cmd_join => $self->irc_botname, $self->log_channel);
+        my $logger = Log::Log4perl->get_logger('');
+        my $appender = Log::Log4perl::Appender->new(
+            'POE::Component::Server::Twirc::LogAppender',
+            name        => 'twirc-logger',
+            ircd        => $self->ircd,
+            irc_botname => $self->irc_botname,
+        );
+        $logger->add_appender($appender);
+    }
+
     $self->yield('friends');
     $self->yield('delay_friends_timeline');
 
@@ -385,9 +408,15 @@ event ircd_daemon_join => sub {
         $self->yield('throttle_messages');
         return;
     }
-    $self->log->debug("\t** part **\n");
-    # only one channel allowed
-    $sender->get_heap()->_daemon_cmd_part($nick, $ch);
+    elsif ( $self->log_channel && $ch eq $self->log_channel ) {
+        my $appender = Log::Log4perl->appender_by_name('twirc-logger');
+        $appender->dump_history;
+    }
+    else {
+        $self->log->debug("\t** part **\n");
+        # only one channel allowed
+        $sender->get_heap()->_daemon_cmd_part($nick, $ch);
+    }
 };
 
 event ircd_daemon_part => sub {
@@ -414,6 +443,8 @@ event ircd_daemon_quit => sub {
 
 event ircd_daemon_public => sub {
     my ($self, $user, $channel, $text) = @_[OBJECT, ARG0, ARG1, ARG2];
+
+    return unless $channel eq $self->irc_channel;
 
     my $nick = ( $user =~ m/^(.*)!/)[0];
     $self->log->debug("[ircd_daemon_public] $nick: $text\n");
