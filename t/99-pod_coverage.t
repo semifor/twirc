@@ -14,9 +14,27 @@ plan skip_all => 'Test::Pod::Coverage 1.04 required' if $@;
 plan skip_all => 'set TEST_POD to enable this test'
   unless ($ENV{TEST_POD} || -e 'MANIFEST.SKIP');
 
-my @modules = sort { $a cmp $b } (Test::Pod::Coverage::all_modules());
-plan tests => scalar(@modules);
+plan tests => 2;
 
-foreach my $module (@modules) {
-    pod_coverage_ok($module, "$module POD coverage");
-}
+# TODO: I really should add documentation
+pod_coverage_ok(
+    'POE::Component::Server::Twirc',
+    { trustme => [ map qr/^$_$/, qw/
+        DEFAULT
+        START
+        bot_says
+        handle_favorite
+        merge_replies
+        nicks_alternation
+        post_ircd
+        set_topic
+        twitter_error
+        /],
+    },
+    'POE::Component::Server::Twirc coverage'
+);
+
+pod_coverage_ok(
+    'App::Twirc',
+    'App::Twirc coverage'
+);

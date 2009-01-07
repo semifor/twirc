@@ -1,4 +1,14 @@
-0.02_5
+0.04
+    - Logging to channel &twirc-log (EXPERIMENTAL)
+    - Twitter assigned source ID
+
+0.03  2009-01-05
+    - Released to CPAN
+    - Renamed Net::Twitter::IRC to POE::Component::Server::Twirc
+    - added backgrounding (--background)
+    - temporarily work around JSON::Any fault on HTTP status 500
+    - No logging by default; config option log_level for noise
+    - Renamed twitirc.pl to twirc
     - Added check_replies and @replies merging
     - Use useragent_class in Net::Twitter 1.22
     - Added echo_posts option, defaults to 0

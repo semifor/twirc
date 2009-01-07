@@ -8,7 +8,3 @@
 - Deal with large numbers of friends, followers, statuses.  I currently have
   just a few friends/followers.  Probably need modifications to handle large
   numbers.
-
-- Does friends_timeline get @replies from non-friends, too, or do I also need
-  to call /statuses/replies?  The API doc say friends_timeline is equivalent
-  to twitter.com/home, so I assume not.

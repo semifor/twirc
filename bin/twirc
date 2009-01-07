@@ -1,0 +1,7 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+use App::Twirc;
+
+my $app = App::Twirc->new_with_options();
+$app->run;
