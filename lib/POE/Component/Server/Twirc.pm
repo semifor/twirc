@@ -767,7 +767,7 @@ event cmd_follow => sub {
     if ( eval { $self->twitter->relationship_exists($nick, $self->twitter_screen_name) } ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $nick);
-        $self->bot_says(qq/Now following $id./);
+        $self->bot_notice(qq/Now following $id./);
     }
 };
 
@@ -795,7 +795,7 @@ event cmd_unfollow => sub {
     $self->post_ircd(daemon_cmd_part => $id, $self->irc_channel);
     $self->post_ircd(del_spooked_nick => $id);
     delete $self->users->{$id};
-    $self->bot_says(qq/No longer following $id./);
+    $self->bot_notice(qq/No longer following $id./);
     
 };
 
@@ -821,7 +821,7 @@ event cmd_block => sub {
     if ( $self->users->{$id} ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '-v', $id);
-        $self->bot_says(qq/Blocked $id./);
+        $self->bot_notice(qq/Blocked $id./);
         
     }
 };
@@ -848,7 +848,7 @@ event cmd_unblock => sub {
     if ( $self->users->{id} ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $id);
-        $self->bot_says(qq/Unblocked $id./);
+        $self->bot_notice(qq/Unblocked $id./);
     }
 };
 
