@@ -621,6 +621,11 @@ event friends_timeline => sub {
         $self->log->debug("\t{ $name, $text }\n");
         push @{ $self->stack }, { name => $name, text => $text }
     }
+
+    unless (@$statuses) {
+      $self->bot_says("That refresh didn't get any new tweets.");
+    }
+
     $self->set_topic($new_topic) if $new_topic;
     $self->yield('user_timeline') unless $self->last_user_timeline_id;
     $self->yield('throttle_messages') if $self->joined;
