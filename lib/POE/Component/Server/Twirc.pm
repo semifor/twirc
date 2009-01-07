@@ -268,11 +268,17 @@ sub bot_says  {
     $self->post_ircd('daemon_cmd_privmsg', $self->irc_botname, $self->irc_channel, $text);
 };
 
+sub bot_notice {
+    my ($self, $text) = @_;
+
+    $self->post_ircd(daemon_cmd_notice => $self->irc_botname, $self->irc_channel, $text);
+}
+
+
 sub twitter_error {
     my ($self, $text) = @_;
 
-    $self->post_ircd(daemon_cmd_notice =>
-        $self->irc_botname, $self->irc_channel, "Twitter error: $text");
+    $self->bot_notice("Twitter error: $text");
 };
 
 # set topic from status, iff newest status
@@ -945,8 +951,7 @@ sub handle_favorite {
         if ( eval { $self->twitter->create_favorite({
                     id => $favorite_candidates[$index - 1]
                 }) } ) {
-            $self->post_ircd(daemon_cmd_notice =>
-                $self->irc_botname, $self->irc_channel, 'favorite added');
+            $self->bot_notice('favorite added');
         }
         else {
             $self->bot_says('create_favorite failed');
