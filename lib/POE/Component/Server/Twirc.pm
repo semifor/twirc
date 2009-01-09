@@ -648,7 +648,7 @@ event friends_timeline => sub {
     }
 
     unless (@$statuses) {
-      $self->bot_says("That refresh didn't get any new tweets.");
+      $self->bot_notice("That refresh didn't get any new tweets.");
     }
 
     $self->set_topic($new_topic) if $new_topic;
