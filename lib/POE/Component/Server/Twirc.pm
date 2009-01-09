@@ -796,7 +796,6 @@ event cmd_unfollow => sub {
     $self->post_ircd(del_spooked_nick => $id);
     delete $self->users->{$id};
     $self->bot_notice(qq/No longer following $id./);
-    
 };
 
 =item block I<id>
@@ -822,7 +821,6 @@ event cmd_block => sub {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '-v', $id);
         $self->bot_notice(qq/Blocked $id./);
-        
     }
 };
 
@@ -970,7 +968,7 @@ sub handle_favorite {
 
 =item check_replies I<on|off>
 
-Turns reply checking on or off.  See L<check_replies> in configuration.
+Turns reply checking on or off.  See L</"check_replies"> in configuration.
 
 =cut
 
