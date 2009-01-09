@@ -6,7 +6,7 @@ use POE qw(Component::Server::IRC);
 use Net::Twitter;
 use Email::Valid;
 use Text::Truncate;
-use App::Twirc::LogAppender;
+use POE::Component::Server::Twirc::LogAppender;
 
 with 'MooseX::Log::Log4perl';
 
@@ -226,6 +226,14 @@ even though they are not followed.
 
 has check_replies => ( isa => 'Bool', is => 'rw', default => 0 );
 
+=item log_channel
+
+If specified, twirc will post log messages to this channel.
+
+=cut
+
+has log_channel => ( isa => 'Str', is => 'ro' );
+
 =back
 
 =cut
@@ -260,11 +268,17 @@ sub bot_says  {
     $self->post_ircd('daemon_cmd_privmsg', $self->irc_botname, $self->irc_channel, $text);
 };
 
+sub bot_notice {
+    my ($self, $text) = @_;
+
+    $self->post_ircd(daemon_cmd_notice => $self->irc_botname, $self->irc_channel, $text);
+}
+
+
 sub twitter_error {
     my ($self, $text) = @_;
 
-    $self->post_ircd(daemon_cmd_notice =>
-        $self->irc_botname, $self->irc_channel, "Twitter error: $text");
+    $self->bot_notice("Twitter error: $text");
 };
 
 # set topic from status, iff newest status
@@ -317,14 +331,17 @@ sub START {
     $self->post_ircd(daemon_cmd_join => $self->irc_botname, $self->irc_channel);
 
     # logging
-    $self->post_ircd(daemon_cmd_join => $self->irc_botname, '&twirc-log');
-    my $logger = Log::Log4perl->get_logger('');
-    my $appender = Log::Log4perl::Appender->new(
-        'App::Twirc::LogAppender',
-        ircd        => $self->ircd,
-        irc_botname => $self->irc_botname,
-    );
-    $logger->add_appender($appender);
+    if ( $self->log_channel ) {
+        $self->post_ircd(daemon_cmd_join => $self->irc_botname, $self->log_channel);
+        my $logger = Log::Log4perl->get_logger('');
+        my $appender = Log::Log4perl::Appender->new(
+            'POE::Component::Server::Twirc::LogAppender',
+            name        => 'twirc-logger',
+            ircd        => $self->ircd,
+            irc_botname => $self->irc_botname,
+        );
+        $logger->add_appender($appender);
+    }
 
     $self->yield('friends');
     $self->yield('delay_friends_timeline');
@@ -397,9 +414,15 @@ event ircd_daemon_join => sub {
         $self->yield('throttle_messages');
         return;
     }
-    #$self->log->debug("\t** part **\n");
-    # only one channel allowed
-    #$sender->get_heap()->_daemon_cmd_part($nick, $ch);
+    elsif ( $self->log_channel && $ch eq $self->log_channel ) {
+        my $appender = Log::Log4perl->appender_by_name('twirc-logger');
+        $appender->dump_history;
+    }
+    else {
+        $self->log->debug("\t** part **\n");
+        # only one channel allowed
+        $sender->get_heap()->_daemon_cmd_part($nick, $ch);
+    }
 };
 
 event ircd_daemon_part => sub {
@@ -426,6 +449,8 @@ event ircd_daemon_quit => sub {
 
 event ircd_daemon_public => sub {
     my ($self, $user, $channel, $text) = @_[OBJECT, ARG0, ARG1, ARG2];
+
+    return unless $channel eq $self->irc_channel;
 
     my $nick = ( $user =~ m/^(.*)!/)[0];
     $self->log->debug("[ircd_daemon_public] $nick: $text\n");
@@ -606,7 +631,7 @@ event friends_timeline => sub {
         $self->log->debug("\t\$name = $name, \$twitter_name = "), $self->twitter_screen_name;
 
         # TODO: is this even necessary? Can we just send a privmsg from a real user?
-        if ( $name eq $self->twitter_screen_name ) {
+        if ( $name eq $self->twitter_screen_name && $status !~ m/^\s+\@/ ) {
             $new_topic = $status;
             $name = $self->twitter_alias if $self->twitter_alias;
             next if !$self->echo_posts && $status->{id} <= $self->last_user_timeline_id;
@@ -747,6 +772,7 @@ event cmd_follow => sub {
     if ( eval { $self->twitter->relationship_exists($nick, $self->twitter_screen_name) } ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $nick);
+        $self->bot_notice(qq/Now following $id./);
     }
 };
 
@@ -774,6 +800,7 @@ event cmd_unfollow => sub {
     $self->post_ircd(daemon_cmd_part => $id, $self->irc_channel);
     $self->post_ircd(del_spooked_nick => $id);
     delete $self->users->{$id};
+    $self->bot_notice(qq/No longer following $id./);
 };
 
 =item block I<id>
@@ -798,6 +825,7 @@ event cmd_block => sub {
     if ( $self->users->{$id} ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '-v', $id);
+        $self->bot_notice(qq/Blocked $id./);
     }
 };
 
@@ -823,6 +851,7 @@ event cmd_unblock => sub {
     if ( $self->users->{id} ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $id);
+        $self->bot_notice(qq/Unblocked $id./);
     }
 };
 
@@ -931,8 +960,7 @@ sub handle_favorite {
         if ( eval { $self->twitter->create_favorite({
                     id => $favorite_candidates[$index - 1]
                 }) } ) {
-            $self->post_ircd(daemon_cmd_notice =>
-                $self->irc_botname, $self->irc_channel, 'favorite added');
+            $self->bot_notice('favorite added');
         }
         else {
             $self->bot_says('create_favorite failed');

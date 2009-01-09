@@ -1,1 +1,8 @@
 twitirc.yml
+Makefile
+README
+blib/*
+MANIFEST
+META.yml
+inc/*
+pm_to_blib

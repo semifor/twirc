@@ -1,5 +1,7 @@
 0.04
+    - Logging to channel &twirc-log (EXPERIMENTAL)
     - Twitter assigned source ID
+
 0.03  2009-01-05
     - Released to CPAN
     - Renamed Net::Twitter::IRC to POE::Component::Server::Twirc
