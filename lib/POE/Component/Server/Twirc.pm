@@ -393,7 +393,7 @@ event ircd_daemon_nick => sub {
 
     return if $nick eq $self->irc_botname;
 
-    $self->log->debug("\tnick = $nick\n");
+    $self->log->debug("    nick = $nick\n");
 
     # Abuse!  Calling the private implementation of ircd to force-join the connecting
     # user to the twitter channel. ircd set's it's heap to $self: see ircd's perldoc.
@@ -410,7 +410,7 @@ event ircd_daemon_join => sub {
 
     if ( $ch eq $self->irc_channel ) {
         $self->joined(1);
-        $self->log->debug("\tjoined!\n");
+        $self->log->debug("    joined!\n");
         $self->yield('throttle_messages');
         return;
     }
@@ -419,7 +419,7 @@ event ircd_daemon_join => sub {
         $appender->dump_history;
     }
     else {
-        $self->log->debug("\t** part **\n");
+        $self->log->debug("    ** part **\n");
         # only one channel allowed
         $sender->get_heap()->_daemon_cmd_part($nick, $ch);
     }
@@ -546,7 +546,7 @@ event friends => sub {
         }
         ++$page;
 
-        $self->log->debug("\tfriends returned ", scalar @$friends, " friends\n");
+        $self->log->debug("    friends returned ", scalar @$friends, " friends\n");
 
         # Current API gets 100 friends per page.  If we have exactly 100 friends
         # we have to try again with page=2 and we should get (I'm assuming, here)
@@ -576,7 +576,7 @@ event followers => sub {
     $self->log->debug("[twitter:followers] calling...\n");
     $page ||= 1;
     while ( my $followers = eval { $self->twitter->followers({page => $page}) } ) {
-        $self->log->debug("\tpage: $page\n");
+        $self->log->debug("    page: $page\n");
         unless ( $followers ) {
             $self->twitter_error("request for followers failed; retrying in $retry seconds");
             $_[KERNEL]->delay(followers => $retry, $page);
@@ -584,7 +584,7 @@ event followers => sub {
         }
         ++$page;
 
-        $self->log->debug("\tfollowers returned ", scalar @$followers, " followers\n");
+        $self->log->debug("    followers returned ", scalar @$followers, " followers\n");
 
         # see comments for event friends
         last unless @$followers;
@@ -615,7 +615,7 @@ event friends_timeline => sub {
         return;
     }
 
-    $self->log->debug("\tfriends_timeline returned ", scalar @$statuses, " statuses\n");
+    $self->log->debug("    friends_timeline returned ", scalar @$statuses, " statuses\n");
     $self->friends_timeline_since_id($statuses->[0]{id}) if @$statuses;
 
     $statuses = $self->merge_replies($statuses);
@@ -628,7 +628,7 @@ event friends_timeline => sub {
 
         # alias our twitter_name if configured
         # (to avoid a collision in case our twitter screen name and irc nick are the same)
-        $self->log->debug("\t\$name = $name, \$twitter_name = "), $self->twitter_screen_name;
+        $self->log->debug("    \$name = $name, \$twitter_name = "), $self->twitter_screen_name;
 
         # TODO: is this even necessary? Can we just send a privmsg from a real user?
         if ( $name eq $self->twitter_screen_name && $status !~ m/^\s+\@/ ) {
@@ -643,7 +643,7 @@ event friends_timeline => sub {
         }
         $self->users->{$name} = $status->{user};
 
-        $self->log->debug("\t{ $name, $text }\n");
+        $self->log->debug("    { $name, $text }\n");
         push @{ $self->stack }, { name => $name, text => $text }
     }
 
@@ -693,7 +693,7 @@ event user_timeline => sub {
         $_[KERNEL]->delay(user_timeline => 60);
     }
 
-    $self->log->debug("\turser_timeline returned\n");
+    $self->log->debug("    urser_timeline returned\n");
     $self->set_topic($statuses->[0]);
 };
 
@@ -735,7 +735,7 @@ event cmd_post => sub {
         return;
     }
 
-    $self->log->debug("\tupdate returned $status\n");
+    $self->log->debug("    update returned $status\n");
 
     $self->set_topic($status);
 };
@@ -869,7 +869,7 @@ event cmd_whois => sub {
 
     my $user = $self->users->{$id};
     unless ( $user ) {
-        $self->log->debug("\t $id not in users; fetching");
+        $self->log->debug("     $id not in users; fetching");
         my $arg = Email::Valid->address($id) ? { email => $id } : { id => $id };
         $user = eval { $self->twitter->show_user($arg) };
     }
