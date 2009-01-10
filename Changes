@@ -1,5 +1,6 @@
 0.04
-    - Logging to channel &twirc-log (EXPERIMENTAL)
+    - additional command feedback (rjbs, marcus)
+    - Logging to channel &twirc-log
     - Twitter assigned source ID
 
 0.03  2009-01-05
