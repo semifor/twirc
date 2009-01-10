@@ -339,6 +339,7 @@ sub START {
             name        => 'twirc-logger',
             ircd        => $self->ircd,
             irc_botname => $self->irc_botname,
+            irc_channel => $self->log_channel,
         );
         $logger->add_appender($appender);
     }
