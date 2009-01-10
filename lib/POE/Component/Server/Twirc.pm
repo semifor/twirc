@@ -7,6 +7,7 @@ use Net::Twitter;
 use Email::Valid;
 use Text::Truncate;
 use POE::Component::Server::Twirc::LogAppender;
+use POE::Component::Server::Twirc::State;
 
 with 'MooseX::Log::Log4perl';
 
@@ -234,6 +235,15 @@ If specified, twirc will post log messages to this channel.
 
 has log_channel => ( isa => 'Str', is => 'ro' );
 
+=item state_file
+
+File used to store state information between sessions, including last message read for
+replies, direct messages, and timelines.
+
+=cut
+
+has state_file => ( isa => 'Str', is => 'ro' );
+
 =back
 
 =cut
@@ -248,14 +258,11 @@ has _joined => (
        accessor => 'joined', isa => 'Bool', is => 'rw', default => 0 );
 has _stack => (
        accessor => 'stack', isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
-has _friends_timeline_since_id => (
-       accessor => 'friends_timeline_since_id', isa => 'Int', is => 'rw' );
-has _last_user_timeline_id => (
-       accessor => 'last_user_timeline_id', isa => 'Int', is => 'rw', default => 0 );
-has _replies_since_id => (
-       accessor => 'replies_since_id', isa => 'Int', is => 'rw' );
 has _stash => (
        accessor => 'stash', isa => 'Maybe[HashRef]', is => 'rw' );
+has _state => (
+       accessor => 'state', isa => 'POE::Component::Server::Twirc::State', is => 'rw',
+       default => sub { POE::Component::Server::Twirc::State->new } );
 
 sub post_ircd {
     my $self = shift;
@@ -285,11 +292,11 @@ sub twitter_error {
 sub set_topic {
     my ($self, $status) = @_;
 
-    return unless $status->{id} > $self->last_user_timeline_id;
+    return unless $status->{id} > $self->state->user_timeline_id;
 
     $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel,
            decode_entities($status->{text}));
-    $self->last_user_timeline_id($status->{id});
+    $self->state->user_timeline_id($status->{id});
 };
 
 # match any nick
@@ -301,6 +308,9 @@ sub nicks_alternation {
 
 sub START {
     my ($self) = @_;
+
+    $self->state->load($self->state_file)
+       if $self->state_file && -r $self->state_file;
 
     $self->ircd(
         POE::Component::Server::IRC->spawn(
@@ -382,6 +392,7 @@ event poco_shutdown => sub {
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
+    $self->state->store($self->state_file) if $self->state_file;
 };
 
 ########################################################################
@@ -610,7 +621,7 @@ event friends_timeline => sub {
 
     my $statuses = eval {
         $self->twitter->friends_timeline({
-            since_id => $self->friends_timeline_since_id
+            since_id => $self->state->friends_timeline_id
         });
     };
 
@@ -620,7 +631,7 @@ event friends_timeline => sub {
     }
 
     $self->log->debug("    friends_timeline returned ", scalar @$statuses, " statuses\n");
-    $self->friends_timeline_since_id($statuses->[0]{id}) if @$statuses;
+    $self->state->friends_timeline_id($statuses->[0]{id}) if @$statuses;
 
     $statuses = $self->merge_replies($statuses);
 
@@ -638,7 +649,7 @@ event friends_timeline => sub {
         if ( $name eq $self->twitter_screen_name && $status !~ m/^\s+\@/ ) {
             $new_topic = $status;
             $name = $self->twitter_alias if $self->twitter_alias;
-            next if !$self->echo_posts && $status->{id} <= $self->last_user_timeline_id;
+            next if !$self->echo_posts && $status->{id} <= $self->state->user_timeline_id;
         }
 
         unless ( $self->users->{$name} ) {
@@ -656,8 +667,11 @@ event friends_timeline => sub {
     }
 
     $self->set_topic($new_topic) if $new_topic;
-    $self->yield('user_timeline') unless $self->last_user_timeline_id;
+    $self->yield('user_timeline') unless $self->state->user_timeline_id;
     $self->yield('throttle_messages') if $self->joined;
+
+    # periodically store state
+    $self->state->store($self->state_file) if $self->state_file;
 };
 
 sub merge_replies {
@@ -665,17 +679,17 @@ sub merge_replies {
     return $statuses unless $self->check_replies;
 
     # TODO: find a better way to initialize this??
-    unless ( $self->replies_since_id ) {
-        $self->replies_since_id(
-            @$statuses ? $statuses->[-1]{id} : $self->last_user_timeline_id
+    unless ( $self->state->reply_id ) {
+        $self->state->reply_id(
+            @$statuses ? $statuses->[-1]{id} : $self->state->user_timeline_id
          );
     }
 
-    my $replies = eval {$self->twitter->replies({ since_id => $self->replies_since_id }) };
+    my $replies = eval {$self->twitter->replies({ since_id => $self->state->reply_id }) };
     if ( $replies && @$replies ) {
         $self->log->debug("[merge_replies] ", scalar @$replies, " replies");
 
-        $self->replies_since_id($replies->[0]{id});
+        $self->state->reply_id($replies->[0]{id});
 
         # TODO: clarification needed: I'm assuming we get replies
         # from friends in *both* friends_timeline and replies,
