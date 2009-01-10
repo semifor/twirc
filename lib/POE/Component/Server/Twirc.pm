@@ -263,22 +263,22 @@ sub post_ircd {
 }
 
 sub bot_says  {
-    my ($self, $text) = @_;
+    my ($self, $channel, $text) = @_;
 
-    $self->post_ircd('daemon_cmd_privmsg', $self->irc_botname, $self->irc_channel, $text);
+    $self->post_ircd('daemon_cmd_privmsg', $self->irc_botname, $channel, $text);
 };
 
 sub bot_notice {
-    my ($self, $text) = @_;
+    my ($self, $channel, $text) = @_;
 
-    $self->post_ircd(daemon_cmd_notice => $self->irc_botname, $self->irc_channel, $text);
+    $self->post_ircd(daemon_cmd_notice => $self->irc_botname, $channel, $text);
 }
 
 
 sub twitter_error {
     my ($self, $text) = @_;
 
-    $self->bot_notice("Twitter error: $text");
+    $self->bot_notice($self->irc_channel, "Twitter error: $text");
 };
 
 # set topic from status, iff newest status
@@ -360,7 +360,8 @@ sub START {
 sub DEFAULT {
     my ($self, $event) = @_[KERNEL, ARG0];
 
-    $self->bot_says(qq/I don't understand "$1". Try "help"./)
+    # TODO: what channel did we come from? Get rid of the need for DEFAULT
+    $self->bot_says($self->irc_channel, qq/I don't understand "$1". Try "help"./)
         if $event =~ /^cmd_(\S+)/;
 }
 
@@ -461,7 +462,7 @@ event ircd_daemon_public => sub {
         $self->log->debug("stash exists...");
         my $handler = delete $self->stash->{handler};
         if ( $handler ) {
-            return if $self->$handler($text); # handled
+            return if $self->$handler($channel, $text); # handled
         }
         else {
             $self->log->error("stash exsits with no handler");
@@ -473,17 +474,17 @@ event ircd_daemon_public => sub {
     # treat "nick: ..." as "post @nick ..."
     my $nick_alternation = $self->nicks_alternation;
     if ( $text =~ s/^($nick_alternation):\s+/\@$1 /i ) {
-        $self->yield(cmd_post => $text);
+        $self->yield(cmd_post => $channel, $text);
         return;
     }
 
     my ($command, $arg) = split /\s/, $text, 2;
     if ( $command =~ /^\w+$/ ) {
         $arg =~ s/\s+$// if $arg;
-        $self->yield("cmd_$command", $arg);
+        $self->yield("cmd_$command", $channel, $arg);
     }
     else {
-        $self->bot_says(qq/That doesn't look like a command. Try "help"./);
+        $self->bot_says($channel, qq/That doesn't look like a command. Try "help"./);
     }
 };
 
@@ -495,12 +496,14 @@ event ircd_daemon_privmsg => sub {
     return unless $user =~ /^\Q$me\E!/;
 
     unless ( $self->users->{$target_nick} ) {
-        $self->bot_says(qq/You don't appear to be following $target_nick; message not sent./);
+        # TODO: handle the error the way IRC would?? (What channel?)
+        $self->bot_says($self->irc_channel, qq/You don't appear to be following $target_nick; message not sent./);
         return;
     }
 
     unless ( eval { $self->twitter->new_direct_message({ user => $target_nick, text => $text }) } ) {
-        $self->twitter_error("new_direct_message failed.");
+        # TODO what channel?
+        $self->bot_says($self->irc_channel, "new_direct_message failed.");
     }
 };
 
@@ -648,7 +651,7 @@ event friends_timeline => sub {
     }
 
     unless (@$statuses) {
-      $self->bot_notice("That refresh didn't get any new tweets.");
+      $self->bot_notice($channel, "That refresh didn't get any new tweets.");
     }
 
     $self->set_topic($new_topic) if $new_topic;
@@ -689,7 +692,7 @@ event user_timeline => sub {
     $self->log->debug("[user_timetline] calling...\n");
     my $statuses = eval { $self->twitter->user_timeline({ count => 1}) } || return;
     unless ( $statuses ) {
-        $self->twitter_error('user_timeline request failed; retrying in 60 seconds');
+        $self->twitter_error($self->irc_channel, 'user_timeline request failed; retrying in 60 seconds');
         $_[KERNEL]->delay(user_timeline => 60);
     }
 
@@ -720,18 +723,18 @@ Post a status update.  E.g.,
 =cut
 
 event cmd_post => sub {
-    my ($self, $text) = @_[OBJECT, ARG0];
+    my ($self, $channel, $text) = @_[OBJECT, ARG0, ARG1];
 
     $self->log->debug("[cmd_post_status]");
 
     if ( (my $n = length($text) - 140) > 0 ) {
-        $self->bot_says("Message not sent; $n characters too long. Limit is 140 characters.");
+        $self->bot_says($channel, "Message not sent; $n characters too long. Limit is 140 characters.");
         return;
     }
 
     my $status = eval { $self->twitter->update($text) };
     unless ( $status ) {
-        $self->twitter_error('status update failed; try again later');
+        $self->bot_says($channel, 'status update failed; try again later');
         return;
     }
 
@@ -747,20 +750,20 @@ Follow a new Twitter user, I<id>.  In Twitter parlance, this creates a friendshi
 =cut
 
 event cmd_follow => sub {
-    my ($self, $id) = @_[OBJECT, ARG0];
+    my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
     if ( $self->users->{$id} ) {
-        $self->bot_says(qq/You're already following $id./);
+        $self->bot_says($channel, qq/You're already following $id./);
         return;
     }
     elsif ( $id !~ /^\w+$/ ) {
-        $self->bot_says(qq/"$id" doesn't look like a user ID to me./);
+        $self->bot_says($channel, qq/"$id" doesn't look like a user ID to me./);
         return;
     }
 
     my $friend = eval { $self->twitter->create_friend($id) };
     unless ( $friend ) {
-        $self->twitter_error('create_friend failed');
+        $self->bot_says($channel, 'create_friend failed');
         return;
     }
 
@@ -772,7 +775,7 @@ event cmd_follow => sub {
     if ( eval { $self->twitter->relationship_exists($nick, $self->twitter_screen_name) } ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $nick);
-        $self->bot_notice(qq/Now following $id./);
+        $self->bot_notice($channel, qq/Now following $id./);
     }
 };
 
@@ -784,23 +787,23 @@ friendship.
 =cut
 
 event cmd_unfollow => sub {
-    my ($self, $id) = @_[OBJECT, ARG0];
+    my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
     if ( !$self->users->{$id} ) {
-        $self->bot_says(qq/You don't appear to be following $id./);
+        $self->bot_says($channel, qq/You don't appear to be following $id./);
         return;
     }
 
     my $friend = eval { $self->twitter->destroy_friend($id) };
     unless ( $friend ) {
-        $self->twitter_error('destroy_friend failed');
+        $self->bot_says($channel, 'destroy_friend failed');
         return;
     }
 
     $self->post_ircd(daemon_cmd_part => $id, $self->irc_channel);
     $self->post_ircd(del_spooked_nick => $id);
     delete $self->users->{$id};
-    $self->bot_notice(qq/No longer following $id./);
+    $self->bot_notice($channel, qq/No longer following $id./);
 };
 
 =item block I<id>
@@ -810,22 +813,22 @@ Block Twitter user I<id>.
 =cut
 
 event cmd_block => sub {
-    my ($self, $id) = @_[OBJECT, ARG0];
+    my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
     if ( $id !~ /^\w+$/ ) {
-        $self->bot_says(qq/"$id" doesn't look like a user ID to me./);
+        $self->bot_says($channel, qq/"$id" doesn't look like a user ID to me./);
         return;
     }
 
     unless ( eval { $self->twitter->create_block($id) } ) {
-        $self->twitter_error('create_block failed');
+        $self->bot_says($channel, 'create_block failed');
         return;
     }
 
     if ( $self->users->{$id} ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '-v', $id);
-        $self->bot_notice(qq/Blocked $id./);
+        $self->bot_notice($channel, qq/Blocked $id./);
     }
 };
 
@@ -836,22 +839,22 @@ Stop blocking Twitter user I<id>.
 =cut
 
 event cmd_unblock => sub {
-    my ($self, $id) = @_[OBJECT, ARG0];
+    my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
     if ( $id !~ /^\w+$/ ) {
-        $self->bot_says(qq/"$id" doesn't look like a user ID to me./);
+        $self->bot_says($channel, qq/"$id" doesn't look like a user ID to me./);
         return;
     }
 
     unless ( eval { $self->twitter->destroy_block($id) } ) {
-        $self->twitter_error('destroy_block failed');
+        $self->bot_says($channel, 'destroy_block failed');
         return;
     }
 
     if ( $self->users->{id} ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $id);
-        $self->bot_notice(qq/Unblocked $id./);
+        $self->bot_notice($channel, qq/Unblocked $id./);
     }
 };
 
@@ -863,7 +866,7 @@ description.
 =cut
 
 event cmd_whois => sub {
-    my ($self, $id) = @_[OBJECT, ARG0];
+    my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
     $self->log->debug("[cmd_whois] $id");
 
@@ -874,13 +877,13 @@ event cmd_whois => sub {
         $user = eval { $self->twitter->show_user($arg) };
     }
     if ( $user ) {
-        $self->bot_says("$user->{screen_name} [$user->{id}]: $user->{name}, $user->{location}");
+        $self->bot_says($channel, "$user->{screen_name} [$user->{id}]: $user->{name}, $user->{location}");
         for ( @{$user}{qw/description url/} ) {
-            $self->bot_says($_) if $_;
+            $self->bot_says($channel, $_) if $_;
         }
     }
     else {
-        $self->bot_says("I don't know $id.");
+        $self->bot_says($channel, "I don't know $id.");
     }
 };
 
@@ -891,20 +894,20 @@ Turns device notifications on or off for the list of Twitter IDs.
 =cut
 
 event cmd_notify => sub {
-    my ($self, $argstr) = @_[OBJECT, ARG0];
+    my ($self, $channel, $argstr) = @_[OBJECT, ARG0, ARG1];
 
     my @nicks = split /\s+/, $argstr;
     my $onoff = shift @nicks;
 
     unless ( $onoff && $onoff =~ /^on|off$/ ) {
-        $self->bot_says("Usage: notify [on|off] nick[ nick [...]]");
+        $self->bot_says($channel, "Usage: notify [on|off] nick[ nick [...]]");
         return;
     }
 
     my $method = $onoff eq 'on' ? 'enable_notifications' : 'disable_notifications';
     for my $nick ( @nicks ) {
         unless ( eval { $self->twitter->$method({ id => $nick }) } ) {
-            $self->twitter_error("notify $onoff failed for $nick");
+            $self->bot_says($channel, "notify $onoff failed for $nick");
         }
     }
 };
@@ -917,7 +920,7 @@ to display for selection with I<count> (Defaults to 3.)
 =cut
 
 event cmd_favorite => sub {
-    my ($self, $args) = @_[OBJECT, ARG0];
+    my ($self, $channel, $args) = @_[OBJECT, ARG0, ARG1];
 
     my ($nick, $count) = split /\s+/, $args;
     $count ||= $self->favorites_count;
@@ -925,17 +928,17 @@ event cmd_favorite => sub {
     $self->log->debug("[cmd_favorite] $nick");
 
     unless ( $self->users->{$nick} ) {
-        $self->bot_says("You're not following $nick.");
+        $self->bot_says($channel, "You're not following $nick.");
         return;
     }
 
     my $recent = eval { $self->twitter->user_timeline({ id => $nick, count => $count }) };
     unless ( $recent ) {
-        $self->twitter_error('user_timeline failed');
+        $self->bot_says($channel, 'user_timeline failed');
         return;
     }
     if ( @$recent == 0 ) {
-        $self->bot_says("$nick has no recent tweets");
+        $self->bot_says($channel, "$nick has no recent tweets");
         return;
     }
 
@@ -944,14 +947,14 @@ event cmd_favorite => sub {
         handler => 'handle_favorite',
     });
 
-    $self->bot_says('Which tweet?');
+    $self->bot_says($channel, 'Which tweet?');
     for ( 1..@$recent ) {
-        $self->bot_says("[$_] " . truncstr($recent->[$_ - 1]{text}, $self->truncate_to));
+        $self->bot_says($channel, "[$_] " . truncstr($recent->[$_ - 1]{text}, $self->truncate_to));
     }
 };
 
 sub handle_favorite {
-    my ($self, $index) = @_;
+    my ($self, $channel, $index) = @_;
 
     $self->log->debug("[handle_favorite] $index");
 
@@ -960,10 +963,10 @@ sub handle_favorite {
         if ( eval { $self->twitter->create_favorite({
                     id => $favorite_candidates[$index - 1]
                 }) } ) {
-            $self->bot_notice('favorite added');
+            $self->bot_notice($channel, 'favorite added');
         }
         else {
-            $self->bot_says('create_favorite failed');
+            $self->bot_says($channel, 'create_favorite failed');
         }
         $self->stash(undef);
         return 1; # handled
@@ -978,10 +981,10 @@ Turns reply checking on or off.  See L</"check_replies"> in configuration.
 =cut
 
 event cmd_check_replies => sub {
-    my ($self, $onoff) = @_[OBJECT, ARG0];
+    my ($self, $channel, $onoff) = @_[OBJECT, ARG0, ARG1];
 
     unless ( $onoff && $onoff =~ /^on|off$/ ) {
-        $self->bot_says("Usage: check_replies [on|off]");
+        $self->bot_says($channel, "Usage: check_replies [on|off]");
         return;
     }
     $self->check_replies($onoff eq 'on' ? 1 : 0);
