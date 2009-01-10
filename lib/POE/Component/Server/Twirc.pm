@@ -991,6 +991,26 @@ event cmd_check_replies => sub {
     $self->check_replies($onoff eq 'on' ? 1 : 0);
 };
 
+=item rate_limit_status
+
+Displays the remaining number of API requests availble in the current hour.
+
+=cut
+
+event cmd_rate_limit_status => sub {
+    my ($self, $channel) = @_[OBJECT, ARG0];
+
+    if ( defined(my $r = $self->twitter->rate_limit_status) ) {
+        my $time = sprintf "%02d:%02d:%02d", (localtime $r->{reset_time_in_seconds})[2,1,0];
+        $self->bot_says($channel, <<"");
+$r->{remaining_hits} API calls remaining until $time, hourly limit is $r->{hourly_limit}
+
+    }
+    else {
+        $self->bot_says($channel, "rate_limit_status failed");
+    }
+};
+
 =item help
 
 Display a simple help message
@@ -1002,7 +1022,7 @@ event cmd_help => sub {
     $self->bot_says("Available commands:");
     $self->bot_says(join ' ' => sort qw/
         post follow unfollow block unblock whois notify refresh favorite
-        check_replies
+        check_replies rate_limit_status
     /);
     $self->bot_says('/msg nick for a direct message.')
 };

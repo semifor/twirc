@@ -1,4 +1,5 @@
 0.04
+    - added rate_limit_status command
     - additional command feedback (rjbs, marcus)
     - Logging to channel &twirc-log
     - Twitter assigned source ID
