@@ -1110,9 +1110,11 @@ event cmd_rate_limit_status => sub {
     my ($self, $channel) = @_[OBJECT, ARG0];
 
     if ( defined(my $r = $self->twitter->rate_limit_status) ) {
-        my $time = sprintf "%02d:%02d:%02d", (localtime $r->{reset_time_in_seconds})[2,1,0];
+        my $reset_time = sprintf "%02d:%02d:%02d", (localtime $r->{reset_time_in_seconds})[2,1,0];
+        my $seconds_remaning = $r->{reset_time_in_seconds} - time;
+        my $time_remaning = sprintf "%d:%02d", int($seconds_remaning / 60), $seconds_remaning % 60;
         $self->bot_says($channel, <<"");
-$r->{remaining_hits} API calls remaining until $time, hourly limit is $r->{hourly_limit}
+$r->{remaining_hits} API calls remaining for the next $time_remaning (until $reset_time), hourly limit is $r->{hourly_limit}
 
     }
     else {
