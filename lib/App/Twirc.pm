@@ -8,8 +8,6 @@ use Path::Class::File;
 with 'MooseX::Getopt',
      'MooseX::Log::Log4perl::Easy';
 
-Log::Log4perl->easy_init;
-
 has configfile => (
     metaclass   => 'Getopt',
     cmd_aliases => 'c',
@@ -33,6 +31,8 @@ sub run {
 
     my $config = Config::Any->load_files({ files => [ $file ], use_ext => 1 });
     $config = $config->[0]{$file};
+
+    Log::Log4perl->easy_init({ layout => '%d{HH:mm:ss} [%p] %m%n' });
 
     # Hack! Make sure state_file is absolute before we background (which does a cd /).
     $config->{state_file} = Path::Class::File->new($config->{state_file})->absolute->stringify

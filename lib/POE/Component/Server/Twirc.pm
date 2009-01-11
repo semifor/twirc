@@ -312,7 +312,7 @@ sub twitter_error {
 sub set_topic {
     my ($self, $status) = @_;
 
-    return unless $status->{id} > $self->state->user_timeline_id;
+    return unless $status->{id} > ($self->state->user_timeline_id || 0);
 
     $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel,
            decode_entities($status->{text}));
@@ -328,9 +328,6 @@ sub nicks_alternation {
 
 sub START {
     my ($self) = @_;
-
-    $self->state(POE::Component::Server::Twirc::State->load($self->state_file))
-        if $self->state_file && -r $self->state_file;
 
     $self->ircd(
         POE::Component::Server::IRC->spawn(
@@ -385,6 +382,16 @@ sub START {
         source    => 'twircgw',
     ));
 
+    if ( $self->state_file && -r $self->state_file ) {
+        eval {
+            $self->state(POE::Component::Server::Twirc::State->load($self->state_file))
+        };
+        if ( $@ ) {
+            $@ =~ s/ at .*//s;
+            $self->log->error($@);
+        }
+    }
+
     return $self;
 }
 
@@ -412,7 +419,13 @@ event poco_shutdown => sub {
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
-    $self->state->store($self->state_file) if $self->state_file;
+    if ( $self->state_file ) {
+        eval { $self->state->store($self->state_file) };
+        if ( $@ ) {
+            $@ =~ s/ at .*//s;
+            $self->log->error($@);
+        }
+    }
 };
 
 ########################################################################
@@ -575,15 +588,16 @@ event friends => sub {
 
     $self->log->debug("[twitter:friends] calling...");
     $page ||= 1;
-    while ( my $friends = eval { $self->twitter->friends({page => $page}) } ) {
+    for (;;) {
+        my $friends = eval { $self->twitter->friends({page => $page}) }; 
         unless ( $friends ) {
             $self->twitter_error("request for friends failed; retrying in $retry seconds");
-            $_[KERNEL]->delay(friends => $retry);
+            $_[KERNEL]->delay(friends => $retry, $page);
             return;
         }
-        ++$page;
-
         $self->log->debug("    friends returned ", scalar @$friends, " friends");
+
+        ++$page;
 
         # Current API gets 100 friends per page.  If we have exactly 100 friends
         # we have to try again with page=2 and we should get (I'm assuming, here)
@@ -599,7 +613,6 @@ event friends => sub {
             $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
             $self->users->{$nick} = $friend;
         }
-        last;
     }
     $self->yield('followers');
 };
@@ -723,7 +736,7 @@ event friends_timeline => sub {
 
             # TODO: is this even necessary? Can we just send a privmsg from a real user?
             $name = $self->twitter_alias if $self->twitter_alias;
-            next if !$self->echo_posts && $status->{id} <= $self->state->user_timeline_id;
+            next if !$self->echo_posts && $status->{id} <= ($self->state->user_timeline_id || 0);
         }
 
         unless ( $self->users->{$name} ) {
@@ -745,7 +758,13 @@ event friends_timeline => sub {
     $self->yield('throttle_messages') if $self->joined;
 
     # periodically store state
-    $self->state->store($self->state_file) if $self->state_file;
+    if ( $self->state_file ) {
+        eval { $self->state->store($self->state_file) };
+        if ( $@ ) {
+            $@ =~ s/ at .*//s;
+            $self->log->error($@);
+        }
+    }
 };
 
 sub merge_replies {
