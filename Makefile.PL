@@ -25,6 +25,7 @@ requires 'MooseX::Log::Log4perl::Easy';
 requires 'Proc::Daemon';
 requires 'FindBin';
 requires 'MooseX::Storable';
+requires 'Path::Class::File';
 
 eval {
     system 'pod2text lib/POE/Component/Server/Twirc.pm > README';
