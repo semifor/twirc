@@ -395,14 +395,6 @@ sub START {
     return $self;
 }
 
-sub DEFAULT {
-    my ($self, $event) = @_[KERNEL, ARG0];
-
-    # TODO: what channel did we come from? Get rid of the need for DEFAULT
-    $self->bot_says($self->irc_channel, qq/I don't understand "$1". Try "help"./)
-        if $event =~ /^cmd_(\S+)/;
-}
-
 # Without detaching the ircd child session, the application will not
 # shut down.  Bug in PoCo::Server::IRC?
 event _child => sub {
@@ -524,10 +516,15 @@ event ircd_daemon_public => sub {
         return;
     }
 
-    my ($command, $arg) = split /\s/, $text, 2;
+    my ($command, $argstr) = split /\s+/, $text, 2;
     if ( $command =~ /^\w+$/ ) {
-        $arg =~ s/\s+$// if $arg;
-        $self->yield("cmd_$command", $channel, $arg);
+        my $event = "cmd_$command";
+        if ( $self->can($event) ) {
+            $self->yield($event, $channel, $argstr);
+        }
+        else {
+            $self->bot_says($channel, qq/I don't understand "$command". Try "help"./)
+        }
     }
     else {
         $self->bot_says($channel, qq/That doesn't look like a command. Try "help"./);
