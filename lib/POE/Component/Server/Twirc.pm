@@ -155,7 +155,13 @@ has irc_channel         => ( isa => 'Str', is => 'ro', default => '&twitter' );
 =item twitter_retry
 
 The number of seconds between polls for new status updates.  Defaults to 300
-(5 minutes).
+(5 minutes).  Twitter imposes a rate limit of 100 API calls per hour.  By default,
+after initial start up, twirc makes a single API call every C<twitter_retry>
+seconds.  Adding L</"check_replies"> and L</"check_direct_messages"> each
+add an additional API call.  Setting C<twitter_retry> too low can cause twirc
+to exceed the rate limit and delay receipt of messages.
+
+Use the L</"rate_limit_status"> command to check your available API calls.
 
 =cut
 
@@ -212,13 +218,13 @@ has truncate_to         => ( isa => 'Int', is => 'ro', default => 60 );
 
 =item check_replies
 
-Experimental!
 If true, checks for @replies when polling for friends' timeline updates
 and merges them with normal status updates.  Normally, only replies from
 friends are displayed.  This provides the display of @replies from
-users not followed.  It comes at the expense of an additional API call
-on each timeline poll, so keep that in mind when setting L</"twitter_retry">.
-Twitter imposes an API call limit of 100 calls per hour.
+users not followed.
+
+C<check_replies> adds an API call, counted against Twitter's rate limit
+every L</"twitter_retry"> seconds.
 
 This also has the effect of adding senders of @replies to the channel,
 even though they are not followed.
@@ -226,6 +232,18 @@ even though they are not followed.
 =cut
 
 has check_replies => ( isa => 'Bool', is => 'rw', default => 0 );
+
+=item check_direct_messages
+
+If true, checks for direct messages in each timeline polling cycle.
+
+
+C<check_direct_messages> adds an API call, counted against Twitter's rate limit
+every L</"twitter_retry"> seconds.
+
+=cut
+
+has check_direct_messages => ( isa => 'Bool', is => 'rw', default => 0 );
 
 =item log_channel
 
@@ -256,8 +274,10 @@ has _users => (
        accessor => 'users', isa => 'HashRef[Str]', is => 'rw', lazy => 1, default => sub { {} } );
 has _joined => (
        accessor => 'joined', isa => 'Bool', is => 'rw', default => 0 );
-has _stack => (
-       accessor => 'stack', isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
+has _tweet_stack => (
+       accessor => 'tweet_stack', isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
+has _dm_stack => (
+       accessor => 'dm_stack', isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
 has _stash => (
        accessor => 'stash', isa => 'Maybe[HashRef]', is => 'rw' );
 has _state => (
@@ -309,8 +329,8 @@ sub nicks_alternation {
 sub START {
     my ($self) = @_;
 
-    $self->state->load($self->state_file)
-       if $self->state_file && -r $self->state_file;
+    $self->state(POE::Component::Server::Twirc::State->load($self->state_file))
+        if $self->state_file && -r $self->state_file;
 
     $self->ircd(
         POE::Component::Server::IRC->spawn(
@@ -388,7 +408,7 @@ event _child => sub {
 event poco_shutdown => sub {
     my ($self) = @_;
 
-    $self->log->debug("[poco_shutdown]\n");
+    $self->log->debug("[poco_shutdown]");
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
@@ -402,11 +422,11 @@ event poco_shutdown => sub {
 event ircd_daemon_nick => sub {
     my ($self, $sender, $nick, $new_nick, $host) = @_[OBJECT, SENDER, ARG0, ARG1, ARG5];
 
-    $self->log->debug("[ircd_daemon_nick] $nick, $new_nick, $host\n");
+    $self->log->debug("[ircd_daemon_nick] $nick, $new_nick, $host");
 
     return if $nick eq $self->irc_botname;
 
-    $self->log->debug("    nick = $nick\n");
+    $self->log->debug("    nick = $nick");
 
     # Abuse!  Calling the private implementation of ircd to force-join the connecting
     # user to the twitter channel. ircd set's it's heap to $self: see ircd's perldoc.
@@ -416,14 +436,15 @@ event ircd_daemon_nick => sub {
 event ircd_daemon_join => sub {
     my($self, $sender, $user, $ch) = @_[OBJECT, SENDER, ARG0, ARG1];
 
-    $self->log->debug("[ircd_daemon_join] $user, $ch\n");
+    $self->log->debug("[ircd_daemon_join] $user, $ch");
     return unless my($nick) = $user =~ /^([^!]+)!/;
     return if $self->users->{$nick};
     return if $nick eq $self->irc_botname;
 
     if ( $ch eq $self->irc_channel ) {
         $self->joined(1);
-        $self->log->debug("    joined!\n");
+        $self->log->debug("    joined!");
+        $self->yield('display_direct_messages');
         $self->yield('throttle_messages');
         return;
     }
@@ -432,7 +453,7 @@ event ircd_daemon_join => sub {
         $appender->dump_history;
     }
     else {
-        $self->log->debug("    ** part **\n");
+        $self->log->debug("    ** part **");
         # only one channel allowed
         $sender->get_heap()->_daemon_cmd_part($nick, $ch);
     }
@@ -451,7 +472,7 @@ event ircd_daemon_part => sub {
 event ircd_daemon_quit => sub {
     my($self, $user) = @_[OBJECT, ARG0];
 
-    $self->log->debug("[ircd_daemon_quit]\n");
+    $self->log->debug("[ircd_daemon_quit]");
     return unless my($nick) = $user =~ /^([^!]+)!/;
     return if $self->users->{$nick};
     return if $nick eq $self->irc_botname;
@@ -466,7 +487,7 @@ event ircd_daemon_public => sub {
     return unless $channel eq $self->irc_channel;
 
     my $nick = ( $user =~ m/^(.*)!/)[0];
-    $self->log->debug("[ircd_daemon_public] $nick: $text\n");
+    $self->log->debug("[ircd_daemon_public] $nick: $text");
     return unless $nick eq $self->irc_nickname;
 
     # give any command handler a shot
@@ -527,6 +548,7 @@ event ircd_daemon_privmsg => sub {
 event delay_friends_timeline => sub {
     my ($self) = @_;
 
+    $self->yield('direct_messages') if $self->check_direct_messages;
     $self->yield('friends_timeline');
     $_[KERNEL]->delay(delay_friends_timeline => $self->twitter_retry);
 };
@@ -534,15 +556,15 @@ event delay_friends_timeline => sub {
 event throttle_messages => sub {
     my ($self) = @_;
 
-    $self->log->debug("[throttle_messages] ", scalar @{$self->stack}, " messages\n");
+    $self->log->debug("[throttle_messages] ", scalar @{$self->tweet_stack}, " messages");
 
-    for my $entry ( @{$self->stack} ) {
+    for my $entry ( @{$self->tweet_stack} ) {
         my @lines = split /\r?\n/, $entry->{text};
         $self->post_ircd(daemon_cmd_privmsg => $entry->{name}, $self->irc_channel, $_)
             for @lines;
     }
 
-    $self->stack([]);
+    $self->tweet_stack([]);
 };
 
 # Add friends to the channel
@@ -551,7 +573,7 @@ event friends => sub {
 
     my $retry = $self->twitter_retry_on_error;
 
-    $self->log->debug("[twitter:friends] calling...\n");
+    $self->log->debug("[twitter:friends] calling...");
     $page ||= 1;
     while ( my $friends = eval { $self->twitter->friends({page => $page}) } ) {
         unless ( $friends ) {
@@ -561,7 +583,7 @@ event friends => sub {
         }
         ++$page;
 
-        $self->log->debug("    friends returned ", scalar @$friends, " friends\n");
+        $self->log->debug("    friends returned ", scalar @$friends, " friends");
 
         # Current API gets 100 friends per page.  If we have exactly 100 friends
         # we have to try again with page=2 and we should get (I'm assuming, here)
@@ -588,10 +610,10 @@ event followers => sub {
 
     my $retry = $self->twitter_retry_on_error;
 
-    $self->log->debug("[twitter:followers] calling...\n");
+    $self->log->debug("[twitter:followers] calling...");
     $page ||= 1;
     while ( my $followers = eval { $self->twitter->followers({page => $page}) } ) {
-        $self->log->debug("    page: $page\n");
+        $self->log->debug("    page: $page");
         unless ( $followers ) {
             $self->twitter_error("request for followers failed; retrying in $retry seconds");
             $_[KERNEL]->delay(followers => $retry, $page);
@@ -599,7 +621,7 @@ event followers => sub {
         }
         ++$page;
 
-        $self->log->debug("    followers returned ", scalar @$followers, " followers\n");
+        $self->log->debug("    followers returned ", scalar @$followers, " followers");
 
         # see comments for event friends
         last unless @$followers;
@@ -614,10 +636,60 @@ event followers => sub {
     }
 };
 
+event direct_messages => sub {
+    my ($self) = @_;
+
+    # We don't want to flood the user with DMs, so if this is the first time,
+    # i.e., no DM id in saved state, just set the high water mark and return.
+    unless ( $self->state->direct_message_id ) {
+        my $high_water = $self->twitter->direct_messages;
+        if ( $high_water ) {
+            $self->state->direct_message_id($high_water->[0]{id}) if @$high_water;
+        }
+        else {
+            $self->twitter_error('direct_messages failed');
+        }
+        return;
+    }
+
+    my $messages = $self->twitter->direct_messages({ since_id => $self->state->direct_message_id });
+    unless ( $messages ) {
+        $self->twitter_error('direct_messages failed');
+        return;
+    }
+
+    if ( @$messages ) {
+        $self->state->direct_message_id($messages->[0]{id});
+
+        for my $msg ( reverse @$messages ) {
+            my ($nick, $ircname) = @{$msg->{sender}}{qw/screen_name name/};
+            unless ( $self->users->{$nick} ) {
+                $self->log->warn("Joining $nick from a direct message; expected $nick already joined.");
+                $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $ircname });
+                $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
+                $self->users->{$nick} = {}; # don't have a status to store
+            }
+
+            push @{$self->dm_stack}, { name => $nick, text => $msg->{text} };
+        }
+        $self->yield('display_direct_messages') if $self->joined;
+    }
+};
+
+event display_direct_messages => sub {
+    my ($self) = @_;
+
+    while ( my $msg = shift @{$self->dm_stack} ) {
+        my @lines = split /\r?\n/, $msg->{text};
+        $self->post_ircd(daemon_cmd_privmsg => $msg->{name}, $self->irc_nickname, $_)
+            for @lines;
+    }
+};
+
 event friends_timeline => sub {
     my ($self) = @_;
 
-    $self->log->debug("[friends_timeline] \n");
+    $self->log->debug("[friends_timeline]");
 
     my $statuses = eval {
         $self->twitter->friends_timeline({
@@ -630,7 +702,7 @@ event friends_timeline => sub {
         return;
     }
 
-    $self->log->debug("    friends_timeline returned ", scalar @$statuses, " statuses\n");
+    $self->log->debug("    friends_timeline returned ", scalar @$statuses, " statuses");
     $self->state->friends_timeline_id($statuses->[0]{id}) if @$statuses;
 
     $statuses = $self->merge_replies($statuses);
@@ -645,9 +717,11 @@ event friends_timeline => sub {
         # (to avoid a collision in case our twitter screen name and irc nick are the same)
         $self->log->debug("    \$name = $name, \$twitter_name = "), $self->twitter_screen_name;
 
-        # TODO: is this even necessary? Can we just send a privmsg from a real user?
-        if ( $name eq $self->twitter_screen_name && $status !~ m/^\s+\@/ ) {
-            $new_topic = $status;
+        # message from self
+        if ( $name eq $self->twitter_screen_name ) {
+            $new_topic = $status unless $status =~ /^\s*\@/;
+
+            # TODO: is this even necessary? Can we just send a privmsg from a real user?
             $name = $self->twitter_alias if $self->twitter_alias;
             next if !$self->echo_posts && $status->{id} <= $self->state->user_timeline_id;
         }
@@ -658,8 +732,8 @@ event friends_timeline => sub {
         }
         $self->users->{$name} = $status->{user};
 
-        $self->log->debug("    { $name, $text }\n");
-        push @{ $self->stack }, { name => $name, text => $text }
+        $self->log->debug("    { $name, $text }");
+        push @{ $self->tweet_stack }, { name => $name, text => $text }
     }
 
     unless (@$statuses) {
@@ -686,17 +760,22 @@ sub merge_replies {
     }
 
     my $replies = eval {$self->twitter->replies({ since_id => $self->state->reply_id }) };
-    if ( $replies && @$replies ) {
-        $self->log->debug("[merge_replies] ", scalar @$replies, " replies");
+    if ( $replies ) {
+        if ( @$replies ) {
+            $self->log->debug("[merge_replies] ", scalar @$replies, " replies");
 
-        $self->state->reply_id($replies->[0]{id});
+            $self->state->reply_id($replies->[0]{id});
 
-        # TODO: clarification needed: I'm assuming we get replies
-        # from friends in *both* friends_timeline and replies,
-        # so, we need to weed them.
-        my %seen = map { ($_->{id}, $_) } @{$statuses}, @{$replies};
+            # TODO: clarification needed: I'm assuming we get replies
+            # from friends in *both* friends_timeline and replies,
+            # so, we need to weed them.
+            my %seen = map { ($_->{id}, $_) } @{$statuses}, @{$replies};
 
-        $statuses = [ sort { $b->{id} <=> $a->{id} } values %seen ];
+            $statuses = [ sort { $b->{id} <=> $a->{id} } values %seen ];
+        }
+    }
+    else {
+        $self->twitter_error('replies failed');
     }
     return $statuses;
 }
@@ -704,14 +783,14 @@ sub merge_replies {
 event user_timeline => sub {
     my ($self) = @_;
 
-    $self->log->debug("[user_timetline] calling...\n");
+    $self->log->debug("[user_timetline] calling...");
     my $statuses = eval { $self->twitter->user_timeline({ count => 1}) } || return;
     unless ( $statuses ) {
         $self->twitter_error($self->irc_channel, 'user_timeline request failed; retrying in 60 seconds');
         $_[KERNEL]->delay(user_timeline => 60);
     }
 
-    $self->log->debug("    urser_timeline returned\n");
+    $self->log->debug("    urser_timeline returned");
     $self->set_topic($statuses->[0]);
 };
 
@@ -753,7 +832,7 @@ event cmd_post => sub {
         return;
     }
 
-    $self->log->debug("    update returned $status\n");
+    $self->log->debug("    update returned $status");
 
     $self->set_topic($status);
 };
@@ -1003,6 +1082,22 @@ event cmd_check_replies => sub {
         return;
     }
     $self->check_replies($onoff eq 'on' ? 1 : 0);
+};
+
+=item check_direct_messages I<on|off>
+
+Turns direct message checking on or off.  See L</"check_direct_messages"> in configuration.
+
+=cut
+
+event cmd_check_direct_messages => sub {
+    my ($self, $channel, $onoff) = @_[OBJECT, ARG0, ARG1];
+
+    unless ( $onoff && $onoff =~ /^on|off$/ ) {
+        $self->bot_says($channel, "Usage: check_replies [on|off]");
+        return;
+    }
+    $self->check_direct_messages($onoff eq 'on' ? 1 : 0);
 };
 
 =item rate_limit_status
