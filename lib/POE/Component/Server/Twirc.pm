@@ -1148,13 +1148,13 @@ Display a simple help message
 =cut
 
 event cmd_help => sub {
-    my ($self, $argstr)=@_[OBJECT, ARG0];
-    $self->bot_says("Available commands:");
-    $self->bot_says(join ' ' => sort qw/
+    my ($self, $channel, $argstr)=@_[OBJECT, ARG0, ARG1];
+    $self->bot_says($channel, "Available commands:");
+    $self->bot_says($channel, join ' ' => sort qw/
         post follow unfollow block unblock whois notify refresh favorite
         check_replies rate_limit_status
     /);
-    $self->bot_says('/msg nick for a direct message.')
+    $self->bot_says($channel, '/msg nick for a direct message.')
 };
 
 event cmd_refresh => sub {
