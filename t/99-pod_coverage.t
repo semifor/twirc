@@ -23,6 +23,7 @@ pod_coverage_ok(
         DEFAULT
         START
         bot_says
+        bot_notice
         handle_favorite
         merge_replies
         nicks_alternation

@@ -320,11 +320,8 @@ sub twitter_error {
 sub set_topic {
     my ($self, $status) = @_;
 
-    return unless $status->{id} > ($self->state->user_timeline_id || 0);
-
     $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel,
            decode_entities($status->{text}));
-    $self->state->user_timeline_id($status->{id});
 };
 
 # match any nick
@@ -381,6 +378,7 @@ sub START {
     }
 
     $self->yield('friends');
+    $self->yield('user_timeline'); # for topic setting
     $self->yield('delay_friends_timeline');
 
     $self->twitter(Net::Twitter->new(
@@ -743,6 +741,9 @@ event friends_timeline => sub {
             # TODO: is this even necessary? Can we just send a privmsg from a real user?
             $name = $self->twitter_alias if $self->twitter_alias;
             next if !$self->echo_posts && $status->{id} <= ($self->state->user_timeline_id || 0);
+
+            $self->state->user_timeline_id($status->{id})
+                if $status->{id} > ($self->state->user_timeline_id || 0);
         }
 
         unless ( $self->users->{$name} ) {
@@ -760,7 +761,6 @@ event friends_timeline => sub {
     }
 
     $self->set_topic($new_topic) if $new_topic;
-    $self->yield('user_timeline') unless $self->state->user_timeline_id;
     $self->yield('throttle_messages') if $self->joined;
 
     # periodically store state
@@ -809,13 +809,25 @@ event user_timeline => sub {
     my ($self) = @_;
 
     $self->log->debug("[user_timetline] calling...");
-    my $statuses = eval { $self->twitter->user_timeline({ count => 1}) } || return;
+    my $statuses = eval { $self->twitter->user_timeline };
     unless ( $statuses ) {
         $self->twitter_error($self->irc_channel, 'user_timeline request failed; retrying in 60 seconds');
         $_[KERNEL]->delay(user_timeline => 60);
     }
-
     $self->log->debug("    urser_timeline returned");
+
+    return unless @$statuses;
+
+    $self->state->user_timeline_id($statuses->[0]{id});
+    for my $status ( @$statuses ) {
+        # skip @replies
+        unless ( $status->{text} =~ /^\s*\@/ ) {
+            $self->set_topic($status);
+            return;
+        }
+    }
+
+    #couldn't find an non-@reply status, punt
     $self->set_topic($statuses->[0]);
 };
 
@@ -1127,7 +1139,7 @@ event cmd_check_direct_messages => sub {
 
 =item rate_limit_status
 
-Displays the remaining number of API requests availble in the current hour.
+Displays the remaining number of API requests available in the current hour.
 
 =cut
 

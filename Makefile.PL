@@ -22,7 +22,7 @@ requires 'MooseX::Getopt'              => '0.15';
 requires 'MooseX::Log::Log4perl::Easy';
 requires 'Proc::Daemon';
 requires 'FindBin';
-requires 'MooseX::Storable';
+requires 'MooseX::Storage';
 requires 'Path::Class::File';
 
 eval {
