@@ -2,8 +2,6 @@ use inc::Module::Install 0.67;
 use strict;
 use warnings;
 
-use 5.008001;
-
 name     'POE-Component-Server-Twirc';
 perl_version '5.008001';
 all_from 'lib/POE/Component/Server/Twirc.pm';

@@ -1,4 +1,5 @@
 0.04
+    - added irc_server_bindaddr option (Sophie Hamilton)
     - added direct message checking
     - added rate_limit_status command
     - additional command feedback (rjbs, marcus)

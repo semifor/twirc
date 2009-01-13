@@ -105,6 +105,14 @@ has irc_server_name     => ( isa => 'Str', is => 'ro', default => 'twitter.irc' 
 
 has irc_server_port     => ( isa => 'Int', is => 'ro', default => 6667 );
 
+=item irc_server_bindaddr
+
+(Optional) The local address to bind to. Defaults to all interfaces.
+
+=cut
+
+# will be defaulted to INADDR_ANY by POE::Wheel::SocketFactory
+has irc_server_bindaddr => ( isa => 'Str', is => 'ro', default => undef );
 
 =item irc_mask
 
@@ -348,7 +356,8 @@ sub START {
         mask     => $self->irc_mask,
         password => $self->irc_password,
     );
-    $self->post_ircd('add_listener', port => $self->irc_server_port);
+    $self->post_ircd('add_listener', port     => $self->irc_server_port,
+                                     bindaddr => $self->irc_server_bindaddr);
 
     # add super user
     $self->post_ircd(
