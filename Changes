@@ -1,4 +1,5 @@
 0.05
+    - made verbose_refresh message optional
     - fixed: topic set twice (on post and on poll)
 
 0.04  2009-01-13

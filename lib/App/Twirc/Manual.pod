@@ -239,6 +239,14 @@ run.
 C<Twirc> will still only show the most recent 20 messages on restart, though.
 The C<state_file> option just prevents redisplaying messages already seen.
 
+=item verbose_refresh
+
+Default 0 (off). If set, when a refresh (whether automatic or the result of
+the L</"refresh"> command) finds no new messages, a notice to that effect will
+be written to the channel.
+
+=cut
+
 =back
 
 =head1 USING
@@ -357,6 +365,10 @@ limit, itself.
 =item help
 
 Display a simple help message listing the available command names.
+
+=item verbose_refresh on|off
+
+Turns C<verbose_refresh> on or off. See L</"verbose_refresh"> in configuration.
 
 =back
 

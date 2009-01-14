@@ -270,6 +270,16 @@ replies, direct messages, and timelines.
 
 has state_file => ( isa => 'Str', is => 'ro' );
 
+=item verbose_refresh
+
+(Optional) If set (1), when a refresh (whether automatic or the result of the
+L</"refresh"> command) finds no new messages, a notice to that effect will be
+written to the channel.
+
+=cut
+
+has verbose_refresh => ( isa => 'Bool', is => 'rw', default => 0 );
+
 =back
 
 =cut
@@ -763,7 +773,7 @@ event friends_timeline => sub {
         push @{ $self->tweet_stack }, { name => $name, text => $text }
     }
 
-    unless (@$statuses) {
+    if ( @$statuses == 0 && $self->verbose_refresh ) {
       $self->bot_notice($channel, "That refresh didn't get any new tweets.");
     }
 
@@ -1050,7 +1060,7 @@ event cmd_notify => sub {
     my $onoff = shift @nicks;
 
     unless ( $onoff && $onoff =~ /^on|off$/ ) {
-        $self->bot_says($channel, "Usage: notify [on|off] nick[ nick [...]]");
+        $self->bot_says($channel, "Usage: notify on|off nick[ nick [...]]");
         return;
     }
 
@@ -1134,7 +1144,7 @@ event cmd_check_replies => sub {
     my ($self, $channel, $onoff) = @_[OBJECT, ARG0, ARG1];
 
     unless ( $onoff && $onoff =~ /^on|off$/ ) {
-        $self->bot_says($channel, "Usage: check_replies [on|off]");
+        $self->bot_says($channel, "Usage: check_replies on|off");
         return;
     }
     $self->check_replies($onoff eq 'on' ? 1 : 0);
@@ -1150,7 +1160,7 @@ event cmd_check_direct_messages => sub {
     my ($self, $channel, $onoff) = @_[OBJECT, ARG0, ARG1];
 
     unless ( $onoff && $onoff =~ /^on|off$/ ) {
-        $self->bot_says($channel, "Usage: check_replies [on|off]");
+        $self->bot_says($channel, "Usage: check_direct_messages on|off");
         return;
     }
     $self->check_direct_messages($onoff eq 'on' ? 1 : 0);
@@ -1189,7 +1199,7 @@ event cmd_help => sub {
     $self->bot_says($channel, "Available commands:");
     $self->bot_says($channel, join ' ' => sort qw/
         post follow unfollow block unblock whois notify refresh favorite
-        check_replies rate_limit_status
+        check_replies rate_limit_status verbose_refresh
     /);
     $self->bot_says($channel, '/msg nick for a direct message.')
 };
@@ -1199,6 +1209,23 @@ event cmd_refresh => sub {
 
     $self->yield('delay_friends_timeline');
 };
+
+=item verbose_refresh I<on|off>
+
+Turns C<verbose_refresh> on or off.  See L</"verbose_refresh"> in configuration.
+
+=cut
+
+event cmd_verbose_refresh => sub {
+    my ($self, $channel, $onoff) = @_[OBJECT, ARG0, ARG1];
+
+    unless ( $onoff && $onoff =~ /^on|off$/ ) {
+        $self->bot_says($channel, "Usage: verbose_refresh on|off");
+        return;
+    }
+    $self->verbose_refresh($onoff eq 'on' ? 1 : 0);
+};
+
 
 1;
 
