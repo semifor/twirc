@@ -753,7 +753,7 @@ event friends_timeline => sub {
         # message from self
         if ( $name eq $self->twitter_screen_name ) {
             $self->state->user_timeline_id($status->{id});
-            $new_topic = $status unless $status =~ /^\s*\@/;
+            $new_topic = $status unless $status->{text} =~ /^\s*\@/;
 
             # TODO: is this even necessary? Can we just send a privmsg from a real user?
             $name = $self->twitter_alias if $self->twitter_alias;
@@ -899,7 +899,7 @@ event cmd_post => sub {
 
     $self->log->debug("    update returned $status");
 
-    $self->set_topic($status);
+    $self->set_topic($status) unless $status->{text} =~ /^\s*\@/;
     $self->_unread_posts->{$status->{id}} = 1;
 };
 
