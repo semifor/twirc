@@ -116,7 +116,7 @@ has irc_server_bindaddr => ( isa => 'Str', is => 'ro', default => undef );
 
 =item irc_mask
 
-The IRC user/host mask used to restrict connecting users.  Defaults to C<*@127.0.0.1>.
+(Optional) The IRC user/host mask used to restrict connecting users.  Defaults to C<*@127.0.0.1>.
 
 =cut
 
@@ -125,7 +125,7 @@ has irc_mask            => ( isa => 'Str', is => 'ro', default => '*@127.0.0.1' 
 
 =item irc_password
 
-Password used to authenticate to the IRC server.
+(Optional) Password used to authenticate to the IRC server.
 
 =cut
 
@@ -134,7 +134,7 @@ has irc_password        => ( isa => 'Str', is => 'ro' );
 
 =item irc_botname
 
-The name of the channel operator bot.  Defaults to C<tweeter>.  Select a name
+(Optional) The name of the channel operator bot.  Defaults to C<tweeter>.  Select a name
 that does not conflict with friends, followers, or your own IRC nick.
 
 =cut
@@ -144,7 +144,7 @@ has irc_botname         => ( isa => 'Str', is => 'ro', default => 'tweeter' );
 
 =item irc_botircname
 
-Text to be used as the channel operator bot's IRC full name.
+(Optional) Text to be used as the channel operator bot's IRC full name.
 
 =cut
 
@@ -153,7 +153,7 @@ has irc_botircname      => ( isa => 'Str', is => 'ro', default => 'Your friendly
 
 =item irc_channel
 
-The name of the channel to use.  Defaults to C<&twitter>.
+(Optional) The name of the channel to use.  Defaults to C<&twitter>.
 
 =cut
 
@@ -162,7 +162,7 @@ has irc_channel         => ( isa => 'Str', is => 'ro', default => '&twitter' );
 
 =item twitter_retry
 
-The number of seconds between polls for new status updates.  Defaults to 300
+(Optional) The number of seconds between polls for new status updates.  Defaults to 300
 (5 minutes).  Twitter imposes a rate limit of 100 API calls per hour.  By default,
 after initial start up, twirc makes a single API call every C<twitter_retry>
 seconds.  Adding L</"check_replies"> and L</"check_direct_messages"> each
@@ -178,7 +178,7 @@ has twitter_retry       => ( isa => 'Int', is => 'ro', default => 300 );
 
 =item twitter_retry_on_error
 
-The number of seconds to wait before retrying a failed poll for friends,
+(Optional) The number of seconds to wait before retrying a failed poll for friends,
 followers, or status updates.  Defaults to 60 (1 minute).
 
 =cut
@@ -188,7 +188,7 @@ has twitter_retry_on_error => ( isa => 'Int', is => 'ro', default => 60 );
 
 =item twitter_alias
 
-An alias to use for displaying incoming status updates from the owning user.
+(Optional) An alias to use for displaying incoming status updates from the owning user.
 This is necessary if the user's IRC nickname and Twitter screen name are the
 same.  Defaults to C<me>.
 
@@ -198,7 +198,7 @@ has twitter_alias       => ( isa => 'Str', is => 'ro', default => 'me' );
 
 =item echo_posts
 
-If false, posts sent by L<POE::Component::Server::Twirc> will not be redisplayed when received
+(Optional) If false, posts sent by L<POE::Component::Server::Twirc> will not be redisplayed when received
 is the friends_timeline.  Defaults to false.
 
 Set C<echo_posts(1)> to see your own tweets in chronological order with the others.
@@ -209,7 +209,7 @@ has echo_posts => ( isa => 'Bool', is => 'rw', default => 0 );
 
 =item favorites_count
 
-How many favorites candidates to display for selection. Defaults to 3.
+(Optional) How many favorites candidates to display for selection. Defaults to 3.
 
 =cut
 
@@ -217,7 +217,7 @@ has favorites_count => ( isa => 'Int', is => 'ro', default => 3 );
 
 =item truncate_to
 
-When displaying tweets for selection, they will be truncated to this length.
+(Optional) When displaying tweets for selection, they will be truncated to this length.
 Defaults to 60.
 
 =cut
@@ -226,7 +226,7 @@ has truncate_to         => ( isa => 'Int', is => 'ro', default => 60 );
 
 =item check_replies
 
-If true, checks for @replies when polling for friends' timeline updates
+(Optional) If true, checks for @replies when polling for friends' timeline updates
 and merges them with normal status updates.  Normally, only replies from
 friends are displayed.  This provides the display of @replies from
 users not followed.
@@ -243,7 +243,7 @@ has check_replies => ( isa => 'Bool', is => 'rw', default => 0 );
 
 =item check_direct_messages
 
-If true, checks for direct messages in each timeline polling cycle.
+(Optional) If true, checks for direct messages in each timeline polling cycle.
 
 
 C<check_direct_messages> adds an API call, counted against Twitter's rate limit
@@ -255,7 +255,7 @@ has check_direct_messages => ( isa => 'Bool', is => 'rw', default => 0 );
 
 =item log_channel
 
-If specified, twirc will post log messages to this channel.
+(Optional) If specified, twirc will post log messages to this channel.
 
 =cut
 
@@ -263,7 +263,7 @@ has log_channel => ( isa => 'Str', is => 'ro' );
 
 =item state_file
 
-File used to store state information between sessions, including last message read for
+(Optional) File used to store state information between sessions, including last message read for
 replies, direct messages, and timelines.
 
 =cut

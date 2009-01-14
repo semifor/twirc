@@ -1,0 +1,395 @@
+=head1 NAME
+
+App::Twic::Manual - User guide and reference for Twirc
+
+
+=head1 DESCRIPTION
+
+C<Twirc> is a twitter client.  More precisely, it is an IRC/Twitter gateway that
+makes your favorite IRC client a twitter client.
+
+=head1 FEATURES
+
+=over 4
+
+=item Follow friends timelines
+
+=item Receive replies from friends and non-friends
+
+=item Post status updates
+
+=item Send and receive direct messages
+
+=item Follow, un-follow, block, unblock, and use most other twitter commands
+
+=back
+
+=head1 INSTALLATION
+
+You can install C<twirc> just as you would any other CPAN distribution:
+
+    cpan POE::Component::Server::Twirc
+
+Or, you can download and unpack C<twirc>, then run it from a directory of your
+choice without running C<make install>.  That's the way the author runs it.  If
+you choose this option, run C<make> to install C<twirc>'s dependencies.
+
+=head1 CONFIGURATION
+
+C<Twirc> uses L<Config::Any>, so you can configure C<twirc> using XML, YAML,
+JSON, Apache-style configuration, Windows INI file format, or even Perl code.
+
+Here's a minimal configuration in YAML:
+
+    irc_nickname: MyIRCNick
+    twitter_username: my_email_address@example.com
+    twitter_passward: secret
+    twitter_screen_name: MyTwitterScreenName
+
+
+=head2 REQUIRED CONFIGURATION OPTIONS
+
+=over 4
+
+=item irc_nickname
+
+The irc nickname used by the owning user. This is the nickname I<you> will use
+when you connect to the C<twirc> IRC server.
+
+=item twitter_username
+
+The username (email address) used to authenticate with Twitter.  This is the ID
+C<twirc> will use to authenticate with Twitter.
+
+=item twitter_password
+
+The password used to authenticate with Twitter.  This is the password C<twirc>
+will use to authenticate with twitter.
+
+=item twitter_screen_name
+
+The user's Twitter screen name.  This is I<your> screen name on Twitter. It may
+very well be the same as your C<irc_nickname>, but it certainly doesn't have to
+be.
+
+=back
+
+=head2 OPTIONAL CONFIGURATION OPTIONS
+
+=over
+
+=item irc_server_name
+
+The name of the IRC server. Defaults to C<twitter.irc>.  Every IRC server has a
+name.  The IRC server included with C<twirc> isn't intended to be accessed
+publicly.  It is for your own personal use.  So, the name is not significant.
+
+=item irc_server_port
+
+The port number the IRC server binds to. Defaults to 6667.
+
+=item irc_server_bindaddr
+
+The local address to bind to. Defaults to all interfaces.  You probably want to
+set this option to C<127.0.0.1>.  That will prevent others from attempting to
+connect to your C<twirc> IRC server.
+
+=item irc_mask
+
+The IRC user/host mask used to restrict connecting users.  Defaults to C<*@127.0.0.1>.
+If you run C<twirc> on a different system than your IRC client, you will need
+to provide this configuration option with a suitable mask.
+
+=item irc_password
+
+Password used to authenticate to the IRC server.  If you don't provide this
+option, no password will be required.  It adds a bit of security.  You may want
+to set this option if other users have access to your system.
+
+=item irc_botname
+
+The name of the channel operator bot.  Defaults to C<tweeter>.  Select a name
+that does not conflict with friends, followers, or your own IRC nick.
+
+When running C<twirc>, you interact with a bot in the channel.  The bot carries
+out commands on your behalf and provides feedback, particularly when there are
+errors.
+
+=item irc_botircname
+
+Text to be used as the channel operator bot's IRC full name. Defaults to
+C<"Your Friendly Twitter Agent">.  This is the name that will appear in
+response to an IRC C</whois> command.
+
+=item irc_channel
+
+The name of the channel where your twitter friends' timelines appear.  This is
+the channel where most of your interaction with C<twirc> occurs.  It defaults
+to C<&twitter>.  The IRC convention for channels names is channels local to a
+single server begin with C<&>.  Network channels begin with C<#>.  You can use
+either to name, however C<&> is more appropriate.
+
+=item twitter_retry
+
+The number of seconds between polls for new status updates, replies, and direct
+messages.  Defaults to 300 (5 minutes).  Twitter imposes a rate limit of 100
+API calls per hour.  By default, after initial start up, twirc makes a single
+API call every C<twitter_retry> seconds.  Adding L</"check_replies"> and
+L</"check_direct_messages"> each add an additional API call.  Setting
+C<twitter_retry> too low can cause twirc to exceed the rate limit and delay
+receipt of messages.
+
+Use the L</"rate_limit_status"> command to check your available API calls.
+
+=item twitter_retry_on_error
+
+The number of seconds to wait before retrying a failed twitter API call in the
+polling loop. Defaults to 60 (1 minute).
+
+=item twitter_alias
+
+An alias to use for displaying incoming status updates from the owning user.
+This is necessary if the user's IRC nickname and Twitter screen name are the
+same.  Defaults to C<me>.
+
+With the default value C<me>, when C<twirc> reads a status message in your
+timeline from your Twitter screen name, it will use C<me> in place of your
+Twitter screen name in the channel.
+
+=item echo_posts
+
+If false, posts sent by C<twirc> will not be redisplayed when polling the
+timeline. Defaults to 0 (false).
+
+This option in off, be default, to prevent some unnecessary noise in the
+channel.  When you post a new status message with C<twirc>, you will see your
+post command, including your status message in the channel.  Tweeter, the bot,
+will send your status update to twitter, and then set the channel topic to your
+message.  If your IRC client displays notices, you will see your message a
+second time in status change.  If this option is set to true, you will see it a
+third time, when C<twirc> next polls Twitter for new status messages.
+
+So, why would you ever want C<echo_posts> on?  C<Twirc> polls Twitter for new
+messages every 5 minutes, by default.  So, there may be messages waiting and
+other messages received after your status update, but before C<twirc> checks
+for new messages again.  With C<echo_posts> on, you will see your message
+again, in chronological order with the rest of the incoming messages.
+
+=item favorites_count
+
+How many favorites candidates to display for selection. Defaults to 3.
+
+When you use the L</"favorite"> command, a list of recent status from the
+friend your a favoriting are displayed for you to choose from.  This option
+tell C<twirc> how many of those messages to display.
+
+=item truncate_to
+
+When displaying a list tweets for selection, for example, in response to the
+L</"favorite"> command, they will be truncated to this length to avoid
+cluttering the screen with long messages that wrap. Defaults to 60.
+
+=item check_replies
+
+Defaults to 0 (off).  If set to 1 (on), checks for @replies when polling for
+friends' timeline updates and merges them with normal status updates.
+Normally, only replies from friends you are following are displayed, just like
+your home page on Twitter.  This provides the display of @replies from users
+not followed.
+
+C<check_replies> adds an API call, counted against Twitter's rate limit
+every L</"twitter_retry"> seconds.
+
+(This also has the effect of adding senders of @replies to the channel,
+even though they are not followed.)
+
+=item check_direct_messages
+
+If true, checks for direct messages in each timeline polling cycle.
+
+C<check_direct_messages> adds an API call, counted against Twitter's rate limit
+every L</"twitter_retry"> seconds.
+
+=item log_channel
+
+If specified, twirc will post log messages to this channel.  If you set this
+option to C<&log>, then you can join the C<&log> channel and see the copious
+debug messages that C<twirc> generates.  This may be useful for trouble
+shooting or problem reporting.
+
+=item state_file
+
+File used to store state information between sessions, including last message read for
+replies, direct messages, and timelines.
+
+By default, C<twirc> does not save any state information between runs.  When
+you start C<twirc> it grabs the most recent 20 messages in the timeline and
+displays them, even if they are the same 20 messages it displayed last time
+your ran C<twirc>.
+
+If you use L</"check_direct_messages"> you will definitely want to use a state
+file so that you do not receive the same batch of direct messages every time
+you start C<twirc>.
+
+If you do provide a C<state_file> name, C<twirc> will save the last message ID
+it processed of each type (friends_timeline, user_timeline, replies, and direct
+messages).  It won't redisplay messages it as already displayed on a previous
+run.
+
+C<Twirc> will still only show the most recent 20 messages on restart, though.
+The C<state_file> option just prevents redisplaying messages already seen.
+
+=back
+
+=head1 USING
+
+To use C<twirc> you first need to start the server:
+
+    bin/twirc -c twirc.yml -b
+
+The C<-b> option runs C<twirc> in the background.  Drop the C<-b> to see
+copious log messages to STDERR.
+
+Next, connect to the server from your IRC client.  I use C<irssi>:
+
+    /connect localhost 6667 secret
+
+where C<secret> is the password set in the config file with option
+L</"irc_password">.  Your IRC client may use different commands.
+
+On connection, C<twirc> will automatically join you to the configured channel.
+The default C<&twitter> will be assumed, here.
+
+Your friends will be automatically joined to the channel.  Friends who are
+also followers are given voice as a visual clue.  In C<irssi> they appear with
+plus sign (+) in front of their names.
+
+To post a new status update, use the L</"post"> command:
+
+    post My first tweet from twirc!
+
+In general, you enter a command followed by its arguments, if any, as a public
+message in the channel.  There's a handy exception to that rule for sending
+replies.  An entry that begins with a nick name, followed by a colon is treated
+as a reply.  E.g.:
+
+    twirc: you make twitter usable!
+
+Is a shortcut for:
+
+    post @twirc you make twitter usable!
+
+By default, C<twirc> checks for updates every 5 minutes.  You can have it check
+immediately using the L</"refresh"> command:
+
+    refresh
+
+C<Twirc> will check for messages immediately, then again every 5 minutes.
+
+Use IRC private messaging to send direct messages.  In irssi:
+
+    /msg friend Watch out, I'm right behind you!
+
+The C<twirc> server stops when you disconnect.  This isn't normal IRC behavior,
+but C<twirc> isn't a normal IRC server.  Its only purpose is to interface with
+Twitter on your behalf and server no useful purpose when you're not connected.
+
+=head1 COMMAND REFERENCE
+
+=over 4
+
+=item post status
+
+Post a status update.  E.g.,
+
+    post Now cooking tweets with twirc!
+
+=item follow twitter_screen_name
+
+Follow a new Twitter user.  This creates a friend relationship and adds the
+friend to the channel.
+
+=item unfollow twitter_screen_name
+
+Stop following a Twitter friend. This destroys the friend relationship and
+removes the friend from the channel.
+
+=cut
+
+=item block twitter_screen_name
+
+Blocks the Twitter user from receiving your Twitter feed.
+
+=item unblock twitter_screen_name
+
+Stop blocking a Twitter user.
+
+=item whois twitter_user
+
+Displays information about Twitter user. C<twitter_user> can be either a screen
+name or email address.
+
+=item notify on|off twitter_screen_name...
+
+Turns device notifications on or off for the list of one or more Twitter
+friends.  The list is space separated.
+
+=item favorite friend [ count ]
+
+Mark a friend's tweet as a favorite.  Optionally, specify the number of tweets
+to display for selection with C<count>. (C<count> defaults to 3. The default
+can be changed with the L</"favorites_count"> option.)
+
+=item check_replies on|off
+
+Turns reply checking on or off.  See L</"check_replies"> in configuration.
+
+=item check_direct_messages on|off
+
+Turns direct message checking on or off.  See L</"check_direct_messages"> in configuration.
+
+=item rate_limit_status
+
+Displays information about the remaining number of API requests available in
+the current hour. The C<rate_limit_status> command does not count against the
+limit, itself.
+
+=item help
+
+Display a simple help message listing the available command names.
+
+=back
+
+=head1 TIPS AND TRICKS
+
+If you're following a particularly noisy friend, you can of course
+L</"unfollow"> her.  Alternatively, you can use your IRC client's features to
+ignore the user.  In irssi:
+
+    /ignore LoudMouth ALL
+    /ignore -except -pattern @YourName LoudMouth ALL
+
+Now, you won't hear from LoudMouth unless she @replies you, and she won't know
+you're ignoring her (unless she reads this tip!).
+
+=head1 SUPPORT
+
+C<Twirc> is free open source software with no warranty of any kind.  That said,
+it's used by some competent perl codes who may be able to help if you have
+trouble.  Try the #twirc channel at L<irc.perl.org>.
+
+The code repository with the development branch is located at
+L<http://github.com/semifor/twirc>.  New features, and bug fixes appear there
+before they hit CPAN, so check the commit log there to see if a problem you've
+found has been addressed.  And feel free to use the development branch.
+
+Finally, follow C<twirc> on twitter.  Changes and updates are announced there.
+Sending an @reply to C<twirc> I<may> get a reply, bit C<twirc>'s feed isn't
+closely followed at the moment.  That's waiting for a new C<twirc> feature to
+allow multiple Twitter feeds.
+
+=head1 AUTHOR
+
+Marc Mims <marc@questright.com>
+
+I'm C<semifor> on twitter and IRC.
