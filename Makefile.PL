@@ -26,7 +26,7 @@ requires 'MooseX::Storage';
 requires 'Path::Class::File';
 
 eval {
-    system 'pod2text lib/POE/Component/Server/Twirc.pm > README';
+    system 'pod2text lib/App/Twirc/Manual.pod > README';
 };
 
 auto_install;

@@ -50,3 +50,4 @@
 # local config files
 ^\w+\.conf$
 ^\w+\.yml$
+.*\.state$
