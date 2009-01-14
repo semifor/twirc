@@ -1,6 +1,6 @@
 =head1 NAME
 
-App::Twic::Manual - User guide and reference for Twirc
+App::Twirc::Manual - User guide and reference for Twirc
 
 
 =head1 DESCRIPTION

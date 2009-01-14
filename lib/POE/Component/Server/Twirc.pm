@@ -291,6 +291,8 @@ has _stash => (
 has _state => (
        accessor => 'state', isa => 'POE::Component::Server::Twirc::State', is => 'rw',
        default => sub { POE::Component::Server::Twirc::State->new } );
+has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
+has _topic_id     => ( isa => 'Int', is => 'rw', default => 0 );
 
 sub post_ircd {
     my $self = shift;
@@ -320,6 +322,10 @@ sub twitter_error {
 sub set_topic {
     my ($self, $status) = @_;
 
+    # only set the topic if it's newer than the last topic
+    return unless $status->{id} > $self->_topic_id;
+
+    $self->_topic_id($status->{id});
     $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel,
            decode_entities($status->{text}));
 };
@@ -736,14 +742,15 @@ event friends_timeline => sub {
 
         # message from self
         if ( $name eq $self->twitter_screen_name ) {
+            $self->state->user_timeline_id($status->{id});
             $new_topic = $status unless $status =~ /^\s*\@/;
 
             # TODO: is this even necessary? Can we just send a privmsg from a real user?
             $name = $self->twitter_alias if $self->twitter_alias;
-            next if !$self->echo_posts && $status->{id} <= ($self->state->user_timeline_id || 0);
 
-            $self->state->user_timeline_id($status->{id})
-                if $status->{id} > ($self->state->user_timeline_id || 0);
+            # if we posted this status from twirc, we've already seen it
+            my $seen = delete $self->_unread_posts->{$status->{id}};
+            next if $seen && !$self->echo_posts;
         }
 
         unless ( $self->users->{$name} ) {
@@ -762,14 +769,26 @@ event friends_timeline => sub {
 
     $self->set_topic($new_topic) if $new_topic;
     $self->yield('throttle_messages') if $self->joined;
+    $self->yield('poll_cleanup');
+};
 
-    # periodically store state
+# handle cleanup after the important work has had a chance to complete
+event poll_cleanup => sub {
+    my ($self) = @_;
+
+    # store state
     if ( $self->state_file ) {
         eval { $self->state->store($self->state_file) };
         if ( $@ ) {
             $@ =~ s/ at .*//s;
             $self->log->error($@);
         }
+    }
+
+    # _unread_posts should always be empty at this point
+    if ( my @unread = keys %{$self->_unread_posts} ) {
+        $self->log->error("recent posts were missing from the feed: @unread");
+        $self->_unread_posts = {}; # since we should never see them, now
     }
 };
 
@@ -818,7 +837,6 @@ event user_timeline => sub {
 
     return unless @$statuses;
 
-    $self->state->user_timeline_id($statuses->[0]{id});
     for my $status ( @$statuses ) {
         # skip @replies
         unless ( $status->{text} =~ /^\s*\@/ ) {
@@ -872,7 +890,7 @@ event cmd_post => sub {
     $self->log->debug("    update returned $status");
 
     $self->set_topic($status);
-    $self->state->user_timeline_id($status->{id});
+    $self->_unread_posts->{$status->{id}} = 1;
 };
 
 =item follow I<id>

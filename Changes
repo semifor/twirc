@@ -1,3 +1,6 @@
+0.05
+    - fixed: topic set twice (on post and on poll)
+
 0.04  2009-01-13
     - added App::Twirc::Manual
     - added irc_server_bindaddr option (Sophie Hamilton)
