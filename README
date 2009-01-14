@@ -1,5 +1,5 @@
 NAME
-    App::Twic::Manual - User guide and reference for Twirc
+    App::Twirc::Manual - User guide and reference for Twirc
 
 DESCRIPTION
     "Twirc" is a twitter client. More precisely, it is an IRC/Twitter
@@ -207,6 +207,11 @@ CONFIGURATION
         though. The "state_file" option just prevents redisplaying messages
         already seen.
 
+    verbose_refresh
+        Default 0 (off). If set, when a refresh (whether automatic or the
+        result of the "refresh" command) finds no new messages, a notice to
+        that effect will be written to the channel.
+
 USING
     To use "twirc" you first need to start the server:
 
@@ -308,6 +313,10 @@ COMMAND REFERENCE
 
     help
         Display a simple help message listing the available command names.
+
+    verbose_refresh on|off
+        Turns "verbose_refresh" on or off. See "verbose_refresh" in
+        configuration.
 
 TIPS AND TRICKS
     If you're following a particularly noisy friend, you can of course

@@ -1,4 +1,4 @@
-0.05
+0.05  2009-01-14
     - fixed topic setting: not on @replies, please
     - made verbose_refresh message optional
     - fixed: topic set twice (on post and on poll)
