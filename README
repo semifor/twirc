@@ -220,7 +220,8 @@ USING
     The "-b" option runs "twirc" in the background. Drop the "-b" to see
     copious log messages to STDERR.
 
-    Next, connect to the server from your IRC client. I use "irssi":
+    Next, connect to the server from your IRC client. I use "irssi"
+    (<http://www.irssi.org>) and my examples will use "irssi" commands:
 
         /connect localhost 6667 secret
 
@@ -256,7 +257,7 @@ USING
 
     "Twirc" will check for messages immediately, then again every 5 minutes.
 
-    Use IRC private messaging to send direct messages. In irssi:
+    Use IRC private messaging to send direct messages. In "irssi":
 
         /msg friend Watch out, I'm right behind you!
 
@@ -319,9 +320,10 @@ COMMAND REFERENCE
         configuration.
 
 TIPS AND TRICKS
+  Ignoring
     If you're following a particularly noisy friend, you can of course
     "unfollow" her. Alternatively, you can use your IRC client's features to
-    ignore the user. In irssi:
+    ignore the user. In "irssi":
 
         /ignore LoudMouth ALL
         /ignore -except -pattern @YourName LoudMouth ALL
@@ -329,21 +331,56 @@ TIPS AND TRICKS
     Now, you won't hear from LoudMouth unless she @replies you, and she
     won't know you're ignoring her (unless she reads this tip!).
 
+  Multiple accounts
+    Although "twirc" doesn't currently support multiple accounts, there's
+    nothing stopping you from running multiple instances of "twirc", one for
+    each account.
+
+    Here's how I do it for accounts "semifor" (my personal account) and
+    "twirc" ("twirc"'s feed for update notices, etc.).
+
+    First, the pertinent sections of the configuration files (in YAML
+    format).
+
+        # File: semifor.yml
+        irc_server_port: 6667
+        irc_channel: '&twitter'
+        irc_nickname: semifor
+        twitter_screen_name: semifor
+        state_file: semifor.state
+        # ...
+
+        # File: twirc.yml
+        irc_server_port: 6668
+        irc_channel: '&twirc'
+        irc_nickname: twirc
+        twitter_screen_name: twirc
+        state_file: twirc.state
+        # ...
+
+    Next, start an instance for each account:
+
+        bin/twirc -c semifor.yml -b
+        bin/twirc -c twirc.yml -b
+
+    In your IRC client, connect to both instances ("irssi" here):
+
+        /connect localhost 6667 secret_password semifor
+        /connect localhost 6668 secret_password twirc
+
+    Now you've got 2 channels, one for each account---in my case, &twitter
+    for "semifor" and &twirc for "twirc".
+
 SUPPORT
     "Twirc" is free open source software with no warranty of any kind. That
-    said, it's used by some competent perl codes who may be able to help if
-    you have trouble. Try the #twirc channel at irc.perl.org.
+    said, it's used by some competent perl coders who may be able to help if
+    you have trouble. Try the #twirc channel at "irc.perl.org".
 
     The code repository with the development branch is located at
     <http://github.com/semifor/twirc>. New features, and bug fixes appear
     there before they hit CPAN, so check the commit log there to see if a
     problem you've found has been addressed. And feel free to use the
     development branch.
-
-    Finally, follow "twirc" on twitter. Changes and updates are announced
-    there. Sending an @reply to "twirc" *may* get a reply, bit "twirc"'s
-    feed isn't closely followed at the moment. That's waiting for a new
-    "twirc" feature to allow multiple Twitter feeds.
 
 AUTHOR
     Marc Mims <marc@questright.com>
