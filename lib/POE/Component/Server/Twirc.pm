@@ -872,6 +872,7 @@ event cmd_post => sub {
     $self->log->debug("    update returned $status");
 
     $self->set_topic($status);
+    $self->state->user_timeline_id($status->{id});
 };
 
 =item follow I<id>
