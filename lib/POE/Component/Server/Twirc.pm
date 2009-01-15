@@ -675,8 +675,7 @@ event direct_messages => sub {
     # We don't want to flood the user with DMs, so if this is the first time,
     # i.e., no DM id in saved state, just set the high water mark and return.
     unless ( $self->state->direct_message_id ) {
-        my $high_water = $self->twitter->direct_messages;
-        if ( $high_water ) {
+        if ( my $high_water = eval { $self->twitter->direct_messages } ) {
             $self->state->direct_message_id($high_water->[0]{id}) if @$high_water;
         }
         else {
@@ -685,7 +684,7 @@ event direct_messages => sub {
         return;
     }
 
-    my $messages = $self->twitter->direct_messages({ since_id => $self->state->direct_message_id });
+    my $messages = eval { $self->twitter->direct_messages({ since_id => $self->state->direct_message_id }) };
     unless ( $messages ) {
         $self->twitter_error('direct_messages failed');
         return;
@@ -1175,7 +1174,7 @@ Displays the remaining number of API requests available in the current hour.
 event cmd_rate_limit_status => sub {
     my ($self, $channel) = @_[OBJECT, ARG0];
 
-    if ( defined(my $r = $self->twitter->rate_limit_status) ) {
+    if ( my $r = eval { $self->twitter->rate_limit_status } ) {
         my $reset_time = sprintf "%02d:%02d:%02d", (localtime $r->{reset_time_in_seconds})[2,1,0];
         my $seconds_remaning = $r->{reset_time_in_seconds} - time;
         my $time_remaning = sprintf "%d:%02d", int($seconds_remaning / 60), $seconds_remaning % 60;
