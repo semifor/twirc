@@ -686,7 +686,9 @@ event direct_messages => sub {
         return;
     }
 
-    my $messages = eval { $self->twitter->direct_messages({ since_id => $self->state->direct_message_id }) };
+    my $messages = eval {
+        $self->twitter->direct_messages({ since_id => ($self->state->direct_message_id || 1) })
+    };
     unless ( $messages ) {
         $self->twitter_error('direct_messages failed');
         return;
@@ -727,7 +729,7 @@ event friends_timeline => sub {
 
     my $statuses = eval {
         $self->twitter->friends_timeline({
-            since_id => $self->state->friends_timeline_id
+            since_id => ($self->state->friends_timeline_id || 1)
         });
     };
 
@@ -818,7 +820,9 @@ sub merge_replies {
          );
     }
 
-    my $replies = eval {$self->twitter->replies({ since_id => $self->state->reply_id }) };
+    my $replies = eval {
+        $self->twitter->replies({ since_id => ($self->state->reply_id || 1) })
+    };
     if ( $replies ) {
         if ( @$replies ) {
             $self->log->debug("[merge_replies] ", scalar @$replies, " replies");
