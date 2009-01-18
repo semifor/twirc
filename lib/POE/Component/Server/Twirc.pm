@@ -796,10 +796,14 @@ event poll_cleanup => sub {
         }
     }
 
-    # _unread_posts should always be empty at this point
-    if ( my @unread = keys %{$self->_unread_posts} ) {
-        $self->log->error("recent posts were missing from the feed: @unread");
-        $self->_unread_posts = {}; # since we should never see them, now
+    # It is possible to get here with _unread_posts populated, for instance, if a post
+    # has been sent *during* processing of the most recent poll results.  However, we
+    # should never have an _uread post older than friends_timeline_id.
+    for my $id ( keys %{$self->_unread_posts} ) {
+        if ( $id <= $self->state->friends_timeline_id ) {
+            $self->log->error("recent post missing from the feed: $id");
+            delete $self->_unread_posts->{$id};
+        }
     }
 };
 
