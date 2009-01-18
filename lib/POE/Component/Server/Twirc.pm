@@ -514,6 +514,8 @@ event ircd_daemon_public => sub {
 
     return unless $channel eq $self->irc_channel;
 
+    $text =~ s/\s+$//;
+
     my $nick = ( $user =~ m/^(.*)!/)[0];
     $self->log->debug("[ircd_daemon_public] $nick: $text");
     return unless $nick eq $self->irc_nickname;
