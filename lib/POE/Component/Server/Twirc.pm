@@ -491,10 +491,10 @@ event ircd_daemon_part => sub {
     my($self, $user, $ch) = @_[OBJECT, ARG0, ARG1];
 
     return unless my($nick) = $user =~ /^([^!]+)!/;
-    return if $self->users->{$nick};
     return if $nick eq $self->irc_botname;
+    delete $self->users->{$nick};
 
-    $self->joined(0) if $ch eq $self->irc_channel;
+    $self->joined(0) if $ch eq $self->irc_channel && $nick eq $self->irc_nickname;
 };
 
 event ircd_daemon_quit => sub {
@@ -971,7 +971,6 @@ event cmd_unfollow => sub {
 
     $self->post_ircd(daemon_cmd_part => $id, $self->irc_channel);
     $self->post_ircd(del_spooked_nick => $id);
-    delete $self->users->{$id};
     $self->bot_notice($channel, qq/No longer following $id./);
 };
 
