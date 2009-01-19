@@ -941,7 +941,11 @@ event cmd_follow => sub {
     $self->post_ircd(daemon_cmd_join => $name, $self->irc_channel);
     $self->users->{$nick} = $friend;
 
-    if ( eval { $self->twitter->relationship_exists($nick, $self->twitter_screen_name) } ) {
+    # work around back compat bug in Net::Twitter 2.01
+    my @args = ($nick, $self->twitter_screen_name);
+    @args = ( { user_a => $args[0], user_b => $args[1] } ) if Net::Twitter->VERSION >= 2.00;
+
+    if ( eval { $self->twitter->relationship_exists(@args) } ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $nick);
         $self->bot_notice($channel, qq/Now following $id./);
