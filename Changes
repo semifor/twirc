@@ -1,3 +1,8 @@
+0.06  2009-01-18
+    - work around back compat bugs in Net::Twitter 2.00 and 2.01
+    - fixed: display of incoming messages stopped after unfollow
+    - trim trailing space from user input
+
 0.05  2009-01-14
     - fixed topic setting: not on @replies, please
     - made verbose_refresh message optional
