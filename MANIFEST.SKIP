@@ -49,5 +49,5 @@
 
 # local config files
 ^\w+\.conf$
-^\w+\.yml$
+^[a-z]+\.yml$
 .*\.state$
