@@ -1,3 +1,10 @@
+0.07
+    - Support for plugins
+    - SquashWhiteSpace plugin
+    - BangCommands plugin
+    - SecondaryAccount plugin
+    - Include META.yml in MANIFEST
+
 0.06  2009-01-18
     - work around back compat bugs in Net::Twitter 2.00 and 2.01
     - fixed: display of incoming messages stopped after unfollow

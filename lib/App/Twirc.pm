@@ -46,8 +46,27 @@ sub run {
         die "$@\n" if $@;
     }
 
-    my $poco = POE::Component::Server::Twirc->new($config);
+    $config->{plugins} = $self->init_plugins($config);
+    POE::Component::Server::Twirc->new($config);
     POE::Kernel->run;
+}
+
+sub init_plugins {
+    my ($self, $config) = @_;
+
+    my $plugins = delete $config->{plugins};
+
+    my @plugins;
+    for my $plugin ( @$plugins ) {
+        my ($class, $options) = ref $plugin ? %$plugin : ($plugin, {});
+        $class = "App::Twirc::Plugin::$class" unless $class =~ s/^\+//;
+
+        eval "use $class";
+        die $@ if $@;
+
+        push @plugins, $class->new($options);
+    }
+    return \@plugins;
 }
 
 1;

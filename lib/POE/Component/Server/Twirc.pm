@@ -280,7 +280,16 @@ written to the channel.
 
 has verbose_refresh => ( isa => 'Bool', is => 'rw', default => 0 );
 
+=item plugins
+
+(Optional) An array of plugin objects.
+
+=cut
+
+has plugins => ( isa => 'ArrayRef[Object]', is => 'ro', default => sub { [] } );
+
 =back
+
 
 =cut
 
@@ -517,6 +526,7 @@ event ircd_daemon_public => sub {
     $text =~ s/\s+$//;
 
     my $nick = ( $user =~ m/^(.*)!/)[0];
+
     $self->log->debug("[ircd_daemon_public] $nick: $text");
     return unless $nick eq $self->irc_nickname;
 
@@ -534,17 +544,28 @@ event ircd_daemon_public => sub {
         $self->stash(undef);
     }
 
+    for my $plugin ( @{$self->plugins} ) {
+        $plugin->preprocess($self, $channel, $nick, \$text) && last
+            if $plugin->can('preprocess');
+    }
+
     # treat "nick: ..." as "post @nick ..."
     my $nick_alternation = $self->nicks_alternation;
-    if ( $text =~ s/^($nick_alternation):\s+/\@$1 /i ) {
-        $self->yield(cmd_post => $channel, $text);
-        return;
-    }
+    $text =~ s/^(?:post\s+)?($nick_alternation):\s+/post \@$1 /i;
 
     my ($command, $argstr) = split /\s+/, $text, 2;
     if ( $command =~ /^\w+$/ ) {
         my $event = "cmd_$command";
-        if ( $self->can($event) ) {
+
+        # Give each plugin a opportunity:
+        # - Plugins return true if they swallow the event; false to continue
+        #   the processing chain.
+        # - Plugins can modify the text, so pass a ref.
+        for my $plugin ( @{$self->plugins} ) {
+            $plugin->$event($self, $channel, $nick, \$argstr) && return
+                if $plugin->can($event);
+        }
+       if ( $self->can($event) ) {
             $self->yield($event, $channel, $argstr);
         }
         else {
@@ -1237,7 +1258,6 @@ event cmd_verbose_refresh => sub {
     }
     $self->verbose_refresh($onoff eq 'on' ? 1 : 0);
 };
-
 
 1;
 

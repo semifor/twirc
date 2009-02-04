@@ -5,3 +5,5 @@ MANIFEST
 META.yml
 inc/*
 pm_to_blib
+*.bak
+*.gz
