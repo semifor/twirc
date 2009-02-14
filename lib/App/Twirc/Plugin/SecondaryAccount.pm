@@ -42,6 +42,8 @@ sub cmd_post {
     return $only; # return a true value to stop the processing chain
 }
 
+no Moose;
+
 __PACKAGE__->meta->make_immutable;
 
 1;

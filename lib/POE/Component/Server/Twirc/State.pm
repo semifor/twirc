@@ -9,4 +9,8 @@ has user_timeline_id    => ( isa => 'Int', is => 'rw' );
 has reply_id            => ( isa => 'Int', is => 'rw' );
 has direct_message_id   => ( isa => 'Int', is => 'rw' );
 
+no Moose;
+
+__PACKAGE__->meta->make_immutable;
+
 1;

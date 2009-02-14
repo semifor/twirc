@@ -16,7 +16,7 @@ with 'MooseX::Log::Log4perl';
 # TODO: remove HTML::Entities and decode_entities calls.
 use HTML::Entities;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 =head1 NAME
 
@@ -298,18 +298,31 @@ has _ircd => (
 has _twitter => (
        accessor => 'twitter',  isa => 'Net::Twitter', is => 'rw' );
 has _users => (
-       accessor => 'users', isa => 'HashRef[Str]', is => 'rw', lazy => 1, default => sub { {} } );
+       accessor => 'users', isa => 'HashRef[Str]', is => 'rw', default => sub { {} } );
 has _joined => (
        accessor => 'joined', isa => 'Bool', is => 'rw', default => 0 );
 has _tweet_stack => (
        accessor => 'tweet_stack', isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
 has _dm_stack => (
        accessor => 'dm_stack', isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
+
 has _stash => (
-       accessor => 'stash', isa => 'Maybe[HashRef]', is => 'rw' );
+        accessor  => 'stash',
+        isa       => 'HashRef',
+        is        => 'rw',
+        predicate => 'has_stash',
+        clearer   => 'clear_stash',
+);
+
 has _state => (
-       accessor => 'state', isa => 'POE::Component::Server::Twirc::State', is => 'rw',
-       default => sub { POE::Component::Server::Twirc::State->new } );
+        accessor => 'state',
+        isa      => 'POE::Component::Server::Twirc::State',
+        is       => 'rw',
+        builder  => '_build_state',
+        lazy     => 1,
+);
+sub _build_state { POE::Component::Server::Twirc::State->new }
+
 has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
 has _topic_id     => ( isa => 'Int', is => 'rw', default => 0 );
 
@@ -531,7 +544,7 @@ event ircd_daemon_public => sub {
     return unless $nick eq $self->irc_nickname;
 
     # give any command handler a shot
-    if ( $self->stash ) {
+    if ( $self->has_stash ) {
         $self->log->debug("stash exists...");
         my $handler = delete $self->stash->{handler};
         if ( $handler ) {
@@ -541,7 +554,7 @@ event ircd_daemon_public => sub {
             $self->log->error("stash exsits with no handler");
         }
         # the user ignored a command completion request, kill it
-        $self->stash(undef);
+        $self->clear_stash;
     }
 
     for my $plugin ( @{$self->plugins} ) {
@@ -1161,7 +1174,7 @@ sub handle_favorite {
         else {
             $self->bot_says($channel, 'create_favorite failed');
         }
-        $self->stash(undef);
+        $self->clear_stash;
         return 1; # handled
     }
     return 0; # unhandled
