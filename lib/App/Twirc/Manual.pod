@@ -43,7 +43,7 @@ Here's a minimal configuration in YAML:
 
     irc_nickname: MyIRCNick
     twitter_username: my_email_address@example.com
-    twitter_passward: secret
+    twitter_password: secret
     twitter_screen_name: MyTwitterScreenName
 
 
