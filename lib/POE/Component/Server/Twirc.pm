@@ -1,6 +1,7 @@
 package POE::Component::Server::Twirc;
 use MooseX::POE;
 
+use MooseX::AttributeHelpers;
 use LWP::UserAgent::POE;
 use POE qw(Component::Server::IRC);
 use Net::Twitter;
@@ -297,8 +298,33 @@ has _ircd => (
        accessor => 'ircd', isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1 );
 has _twitter => (
        accessor => 'twitter',  isa => 'Net::Twitter', is => 'rw' );
-has _users => (
-       accessor => 'users', isa => 'HashRef[Str]', is => 'rw', default => sub { {} } );
+has _users_by_nick => (
+    metaclass => 'Collection::Hash',
+    isa => 'HashRef[HashRef]',
+    is => 'rw',
+    default => sub { {} },
+    provides => {
+        set      => 'set_user_by_nick',
+        get      => 'get_user_by_nick',
+        empty    => 'has_users_by_nick',
+        count    => 'num_users_by_nick',
+        'delete' => 'delete_user_by_nick',
+        'keys'   => 'user_nicks',
+    },
+);
+
+has _users_by_id => (
+    metaclass => 'Collection::Hash',
+    isa => 'HashRef[HashRef]',
+    is  => 'rw',
+    default => sub { {} },
+    provides => {
+        set      => 'set_user_by_id',
+        get      => 'get_user_by_id',
+        'delete' => 'delete_user_by_id',
+    },
+);
+
 has _joined => (
        accessor => 'joined', isa => 'Bool', is => 'rw', default => 0 );
 has _tweet_stack => (
@@ -366,7 +392,22 @@ sub set_topic {
 sub nicks_alternation {
     my $self = shift;
 
-    return join '|', map quotemeta, keys %{$self->users};
+    return join '|', map quotemeta, $self->user_nicks;
+}
+
+sub add_user {
+    my ($self, $user) = @_;
+
+    $self->set_user_by_nick($user->{screen_name}, $user);
+    $self->set_user_by_id($user->{id}, $user);
+}
+
+sub delete_user {
+    my ($self, $user) = @_;
+
+    my ($id, $nick) = @{$user}{qw/id screen_name/};
+    $self->delete_user_by_id($id);
+    $self->delete_user_by_nick($nick);
 }
 
 sub START {
@@ -475,6 +516,7 @@ event ircd_daemon_nick => sub {
     $self->log->debug("[ircd_daemon_nick] $nick, $new_nick, $host");
 
     return if $nick eq $self->irc_botname;
+    return if $new_nick; # nick change
 
     $self->log->debug("    nick = $nick");
 
@@ -488,7 +530,7 @@ event ircd_daemon_join => sub {
 
     $self->log->debug("[ircd_daemon_join] $user, $ch");
     return unless my($nick) = $user =~ /^([^!]+)!/;
-    return if $self->users->{$nick};
+    return if $self->get_user_by_nick($nick);
     return if $nick eq $self->irc_botname;
 
     if ( $ch eq $self->irc_channel ) {
@@ -510,11 +552,12 @@ event ircd_daemon_join => sub {
 };
 
 event ircd_daemon_part => sub {
-    my($self, $user, $ch) = @_[OBJECT, ARG0, ARG1];
+    my($self, $user_name, $ch) = @_[OBJECT, ARG0, ARG1];
 
-    return unless my($nick) = $user =~ /^([^!]+)!/;
+    return unless my($nick) = $user_name =~ /^([^!]+)!/;
     return if $nick eq $self->irc_botname;
-    delete $self->users->{$nick};
+
+    $self->delete_user($self->get_user_by_nick($nick));
 
     $self->joined(0) if $ch eq $self->irc_channel && $nick eq $self->irc_nickname;
 };
@@ -524,7 +567,7 @@ event ircd_daemon_quit => sub {
 
     $self->log->debug("[ircd_daemon_quit]");
     return unless my($nick) = $user =~ /^([^!]+)!/;
-    return if $self->users->{$nick};
+    return if $self->get_user_by_nick($nick);
     return if $nick eq $self->irc_botname;
 
     $self->joined(0);
@@ -597,7 +640,7 @@ event ircd_daemon_privmsg => sub {
     my $me = $self->irc_nickname;
     return unless $user =~ /^\Q$me\E!/;
 
-    unless ( $self->users->{$target_nick} ) {
+    unless ( $self->get_user_by_nick($target_nick) ) {
         # TODO: handle the error the way IRC would?? (What channel?)
         $self->bot_says($self->irc_channel, qq/You don't appear to be following $target_nick; message not sent./);
         return;
@@ -662,12 +705,12 @@ event friends => sub {
         last unless @$friends;
 
         for my $friend ( @$friends ) {
-            my ($nick, $name) = @{$friend}{qw/screen_name name/};
+            my ($id, $nick, $name) = @{$friend}{qw/id screen_name name/};
 
-            next if $self->users->{$nick};
+            next if $self->get_user_by_id($id);
             $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $name });
             $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
-            $self->users->{$nick} = $friend;
+            $self->add_user($friend);
         }
     }
     $self->yield('followers');
@@ -697,7 +740,7 @@ event followers => sub {
 
         for my $follower ( @$followers ) {
             my $nick = $follower->{screen_name};
-            if ( $self->users->{$nick} ) {
+            if ( $self->get_user_by_nick($nick) ) {
                 $self->post_ircd(daemon_cmd_mode =>
                     $self->irc_botname, $self->irc_channel, '+v', $nick);
             }
@@ -733,11 +776,15 @@ event direct_messages => sub {
 
         for my $msg ( reverse @$messages ) {
             my ($nick, $ircname) = @{$msg->{sender}}{qw/screen_name name/};
-            unless ( $self->users->{$nick} ) {
+            unless ( $self->get_user_by($nick) ) {
                 $self->log->warn("Joining $nick from a direct message; expected $nick already joined.");
                 $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $ircname });
                 $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
-                $self->users->{$nick} = {}; # don't have a status to store
+                $self->add_user({
+                    # don't have a status to store
+                    id => $msg->{sender_id},
+                    screen_name => $msg->{sender_screen_name}
+                });
             }
 
             push @{$self->dm_stack}, { name => $nick, text => $msg->{text} };
@@ -780,7 +827,7 @@ event friends_timeline => sub {
     my $channel = $self->irc_channel;
     my $new_topic;
     for my $status (reverse @{ $statuses }) {
-        my ($name, $ircname) = @{$status->{user}}{qw/screen_name name/};
+        my ($id, $name, $ircname) = @{$status->{user}}{qw/id screen_name name/};
         my $text = decode_entities($status->{text});
 
         # alias our twitter_name if configured
@@ -800,11 +847,19 @@ event friends_timeline => sub {
             next if $seen && !$self->echo_posts;
         }
 
-        unless ( $self->users->{$name} ) {
+        my $user = $self->get_user_by_id($id);
+        if ( !$user ) {
+            # new user
             $self->post_ircd(add_spoofed_nick => { nick => $name, ircname => $ircname });
             $self->post_ircd(daemon_cmd_join => $name, $channel);
         }
-        $self->users->{$name} = $status->{user};
+        elsif ( $user->{screen_name} ne $name ) {
+            # nick change
+            $self->delete_user_by_nick($user->{id});
+            $self->post_ircd(daemon_cmd_nick => $user->{screen_name}, $name);
+        }
+
+        $self->add_user($status->{user});
 
         $self->log->debug("    { $name, $text }");
         push @{ $self->tweet_stack }, { name => $name, text => $text }
@@ -955,7 +1010,7 @@ Follow a new Twitter user, I<id>.  In Twitter parlance, this creates a friendshi
 event cmd_follow => sub {
     my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
-    if ( $self->users->{$id} ) {
+    if ( $self->get_user_by_nick($id) ) {
         $self->bot_says($channel, qq/You're already following $id./);
         return;
     }
@@ -973,7 +1028,7 @@ event cmd_follow => sub {
     my ($nick, $name) = @{$friend}{qw/screen_name name/};
     $self->post_ircd('add_spoofed_nick', { nick => $nick, ircname => $name });
     $self->post_ircd(daemon_cmd_join => $name, $self->irc_channel);
-    $self->users->{$nick} = $friend;
+    $self->add_user($friend);
 
     # work around back compat bug in Net::Twitter 2.01
     my @args = ($nick, $self->twitter_screen_name);
@@ -996,7 +1051,7 @@ friendship.
 event cmd_unfollow => sub {
     my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
-    if ( !$self->users->{$id} ) {
+    if ( !$self->get_user_by_nick($id) ) {
         $self->bot_says($channel, qq/You don't appear to be following $id./);
         return;
     }
@@ -1031,7 +1086,7 @@ event cmd_block => sub {
         return;
     }
 
-    if ( $self->users->{$id} ) {
+    if ( $self->get_user_by_nick($id) ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '-v', $id);
         $self->bot_notice($channel, qq/Blocked $id./);
@@ -1057,7 +1112,7 @@ event cmd_unblock => sub {
         return;
     }
 
-    if ( $self->users->{id} ) {
+    if ( $self->get_user_by_nick($id) ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $id);
         $self->bot_notice($channel, qq/Unblocked $id./);
@@ -1076,7 +1131,7 @@ event cmd_whois => sub {
 
     $self->log->debug("[cmd_whois] $id");
 
-    my $user = $self->users->{$id};
+    my $user = $self->get_user_by_nick($id);
     unless ( $user ) {
         $self->log->debug("     $id not in users; fetching");
         my $arg = Email::Valid->address($id) ? { email => $id } : { id => $id };
@@ -1133,7 +1188,7 @@ event cmd_favorite => sub {
 
     $self->log->debug("[cmd_favorite] $nick");
 
-    unless ( $self->users->{$nick} ) {
+    unless ( $self->get_user_by_nick($nick) ) {
         $self->bot_says($channel, "You're not following $nick.");
         return;
     }
