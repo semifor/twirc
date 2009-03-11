@@ -347,6 +347,7 @@ has _state => (
         builder  => '_build_state',
         lazy     => 1,
 );
+
 sub _build_state { POE::Component::Server::Twirc::State->new }
 
 has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
@@ -1010,11 +1011,7 @@ Follow a new Twitter user, I<id>.  In Twitter parlance, this creates a friendshi
 event cmd_follow => sub {
     my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
-    if ( $self->get_user_by_nick($id) ) {
-        $self->bot_says($channel, qq/You're already following $id./);
-        return;
-    }
-    elsif ( $id !~ /^\w+$/ ) {
+    if ( $id !~ /^\w+$/ ) {
         $self->bot_says($channel, qq/"$id" doesn't look like a user ID to me./);
         return;
     }
