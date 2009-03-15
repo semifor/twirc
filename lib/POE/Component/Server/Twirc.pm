@@ -197,6 +197,14 @@ same.  Defaults to C<me>.
 
 has twitter_alias       => ( isa => 'Str', is => 'ro', default => 'me' );
 
+=item twitter_args
+
+(Optional) A hashref of extra arguments to pass to C<< Net::Twitter->new >>.
+
+=cut
+
+has twitter_args => ( isa => 'HashRef', is => 'ro', default => sub { {} } );
+
 =item echo_posts
 
 (Optional) If false, posts sent by L<POE::Component::Server::Twirc> will not be redisplayed when received
@@ -462,6 +470,7 @@ sub START {
     $self->yield('delay_friends_timeline');
 
     $self->twitter(Net::Twitter->new(
+        %{ $self->twitter_args },
         useragent_class => 'LWP::UserAgent::POE',
         username  => $self->twitter_username,
         password  => $self->twitter_password,
