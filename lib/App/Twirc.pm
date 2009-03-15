@@ -93,6 +93,8 @@ App::Twirc - IRC is my twitter client
 C<App::Twirc> is an IRC server making the IRC client of your choice your twitter client.  The C<twirc>
 program in this distribution launches the application.
 
+See L<App::Twirc::Manual> for more details.
+
 =head1 OPTIONS
 
 =over 4
