@@ -521,14 +521,14 @@ event poco_shutdown => sub {
 ########################################################################
 
 event ircd_daemon_nick => sub {
-    my ($self, $sender, $nick, $new_nick, $host) = @_[OBJECT, SENDER, ARG0, ARG1, ARG5];
+    my ($self, $sender, $nick) = @_[OBJECT, SENDER, ARG0];
 
-    $self->log->debug("[ircd_daemon_nick] $nick, $new_nick, $host");
+    $self->log->debug("[ircd_daemon_nick] $nick"); 
+
+    # if it's a nick change, we only get ARG0 and ARG1
+    return unless defined $_[ARG2];
 
     return if $nick eq $self->irc_botname;
-    return if $new_nick; # nick change
-
-    $self->log->debug("    nick = $nick");
 
     # Abuse!  Calling the private implementation of ircd to force-join the connecting
     # user to the twitter channel. ircd set's it's heap to $self: see ircd's perldoc.
