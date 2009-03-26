@@ -786,7 +786,7 @@ event direct_messages => sub {
 
         for my $msg ( reverse @$messages ) {
             my ($nick, $ircname) = @{$msg->{sender}}{qw/screen_name name/};
-            unless ( $self->get_user_by($nick) ) {
+            unless ( $self->get_user_by_nick($nick) ) {
                 $self->log->warn("Joining $nick from a direct message; expected $nick already joined.");
                 $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $ircname });
                 $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
