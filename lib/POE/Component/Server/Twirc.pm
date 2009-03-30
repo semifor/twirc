@@ -773,8 +773,9 @@ event direct_messages => sub {
         return;
     }
 
+    my $since_id = $self->state->direct_message_id || 1;
     my $messages = eval {
-        $self->twitter->direct_messages({ since_id => ($self->state->direct_message_id || 1) })
+        $self->twitter->direct_messages({ since_id => $since_id })
     };
     unless ( $messages ) {
         $self->twitter_error('direct_messages failed');
@@ -785,6 +786,9 @@ event direct_messages => sub {
         $self->state->direct_message_id($messages->[0]{id});
 
         for my $msg ( reverse @$messages ) {
+            # workarond twitter bug where since_id parameter is ignored:
+            next unless $msg->{id} > $since_id;
+
             my ($nick, $ircname) = @{$msg->{sender}}{qw/screen_name name/};
             unless ( $self->get_user_by_nick($nick) ) {
                 $self->log->warn("Joining $nick from a direct message; expected $nick already joined.");
