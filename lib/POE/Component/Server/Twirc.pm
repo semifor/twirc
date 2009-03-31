@@ -822,11 +822,8 @@ event friends_timeline => sub {
 
     $self->log->debug("[friends_timeline]");
 
-    my $statuses = eval {
-        $self->twitter->friends_timeline({
-            since_id => ($self->state->friends_timeline_id || 1)
-        });
-    };
+    my $since_id = $self->state->friends_timeline_id || 1;
+    my $statuses = eval { $self->twitter->friends_timeline({ since_id => $since_id }) };
 
     unless ( $statuses ) {
         $self->twitter_error('friends_timeline request failed');
@@ -841,6 +838,11 @@ event friends_timeline => sub {
     my $channel = $self->irc_channel;
     my $new_topic;
     for my $status (reverse @{ $statuses }) {
+        # Work around twitter api bug where since_id is ignored. (I haven't seen this bug
+        # with friends_timeline---only with direct_messages and replies.  Adding the workaround
+        # for friends_timeline proactively.)
+        next unless $status->{id} > $since_id;
+
         my ($id, $name, $ircname) = @{$status->{user}}{qw/id screen_name name/};
         my $text = decode_entities($status->{text});
 
@@ -923,8 +925,9 @@ sub merge_replies {
          );
     }
 
+    my $since_id = $self->state->reply_id || 1;
     my $replies = eval {
-        $self->twitter->replies({ since_id => ($self->state->reply_id || 1) })
+        $self->twitter->replies({ since_id => $since_id })
     };
     if ( $replies ) {
         if ( @$replies ) {
@@ -935,7 +938,10 @@ sub merge_replies {
             # TODO: clarification needed: I'm assuming we get replies
             # from friends in *both* friends_timeline and replies,
             # so, we need to weed them.
-            my %seen = map { ($_->{id}, $_) } @{$statuses}, @{$replies};
+            my %seen = map { ($_->{id}, $_) }
+                       @{$statuses},
+                       # work around a twitter api bug where the since_id param is ignored
+                       grep { $_->{id} > $since_id } @{$replies};
 
             $statuses = [ sort { $b->{id} <=> $a->{id} } values %seen ];
         }
@@ -950,7 +956,9 @@ event user_timeline => sub {
     my ($self) = @_;
 
     $self->log->debug("[user_timetline] calling...");
-    my $statuses = eval { $self->twitter->user_timeline };
+    # Work around a twitter api bug by passing id; without it, sometimes the wrong users statuses
+    # are returned.
+    my $statuses = eval { $self->twitter->user_timeline({ id =>  $self->twitter_screen_name }) };
     unless ( $statuses ) {
         $self->twitter_error($self->irc_channel, 'user_timeline request failed; retrying in 60 seconds');
         $_[KERNEL]->delay(user_timeline => 60);
