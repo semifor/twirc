@@ -681,7 +681,7 @@ event throttle_messages => sub {
     $self->log->debug("[throttle_messages] ", scalar @{$self->tweet_stack}, " messages");
 
     for my $entry ( @{$self->tweet_stack} ) {
-        my @lines = split /\r?\n/, $entry->{text};
+        my @lines = split /[\r\n]+/, $entry->{text};
         $self->post_ircd(daemon_cmd_privmsg => $entry->{name}, $self->irc_channel, $_)
             for @lines;
     }
