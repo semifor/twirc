@@ -783,7 +783,8 @@ event direct_messages => sub {
     }
 
     if ( @$messages ) {
-        $self->state->direct_message_id($messages->[0]{id});
+        $self->state->direct_message_id($messages->[0]{id})
+            if $messages->[0]{id} > $since_id; # lack of faith in twitterapi
 
         for my $msg ( reverse @$messages ) {
             # workarond twitter bug where since_id parameter is ignored:
@@ -830,8 +831,10 @@ event friends_timeline => sub {
         return;
     }
 
+    # TODO: 4/6/2009 7:58 PM PST, died here ($statuses NOT an arrayref!):
     $self->log->debug("    friends_timeline returned ", scalar @$statuses, " statuses");
-    $self->state->friends_timeline_id($statuses->[0]{id}) if @$statuses;
+    $self->state->friends_timeline_id($statuses->[0]{id})
+        if @$statuses && $statuses->[0]{id} > $since_id;  # lack of faith in twitterapi
 
     $statuses = $self->merge_replies($statuses);
 
@@ -852,7 +855,8 @@ event friends_timeline => sub {
 
         # message from self
         if ( $name eq $self->twitter_screen_name ) {
-            $self->state->user_timeline_id($status->{id});
+            $self->state->user_timeline_id($status->{id})
+                if $status->{id} > $self->state->user_timeline_id; # lack of faith in twitterapi
             $new_topic = $status unless $status->{text} =~ /^\s*\@/;
 
             # TODO: is this even necessary? Can we just send a privmsg from a real user?
@@ -933,7 +937,8 @@ sub merge_replies {
         if ( @$replies ) {
             $self->log->debug("[merge_replies] ", scalar @$replies, " replies");
 
-            $self->state->reply_id($replies->[0]{id});
+            $self->state->reply_id($replies->[0]{id})
+                if $replies->[0]{id} > $since_id; # lack of faith in twitterapi
 
             # TODO: clarification needed: I'm assuming we get replies
             # from friends in *both* friends_timeline and replies,
