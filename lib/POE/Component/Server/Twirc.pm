@@ -304,8 +304,7 @@ has plugins => ( isa => 'ArrayRef[Object]', is => 'ro', default => sub { [] } );
 
 has _ircd => (
        accessor => 'ircd', isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1 );
-has _twitter => (
-       accessor => 'twitter',  isa => 'Net::Twitter', is => 'rw' );
+has _twitter => ( isa => 'Net::Twitter', is => 'rw' );
 has _users_by_nick => (
     metaclass => 'Collection::Hash',
     isa => 'HashRef[HashRef]',
@@ -360,6 +359,36 @@ sub _build_state { POE::Component::Server::Twirc::State->new }
 
 has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
 has _topic_id     => ( isa => 'Int', is => 'rw', default => 0 );
+
+sub twitter {
+    my ($self, $method, @args) = @_;
+
+    # Get our own NT object so we can check get_error
+    my $nt = $self->_twitter->clone;
+    my $r = eval { $nt->$method(@args) };
+
+    # synthesize an error (broken twitter api!)
+    if ( $r && ref($r) eq 'HASH' && exists $r->{error} ) {
+        $nt->{response_error} = $r;
+        undef $r;
+    }
+
+    unless ( defined $r ) {
+        my $error = $nt->get_error;
+        if ( ref $error ) {
+            if ( ref($error) eq 'HASH' && exists $error->{error} ) {
+                $error = $error->{error};
+            }
+            else {
+                $error = 'Unexpected error type ' . ref($error);
+            }
+        }
+        $error = $nt->http_code == 502 ? 'Fail Whale' : '[' . $nt->http_code . '] ' . $error;
+        $error = $self->twitter_error("$method ->  $error");
+    }
+
+    return $r;
+}
 
 sub post_ircd {
     my $self = shift;
@@ -469,7 +498,7 @@ sub START {
     $self->yield('user_timeline'); # for topic setting
     $self->yield('delay_friends_timeline');
 
-    $self->twitter(Net::Twitter->new(
+    $self->_twitter(Net::Twitter->new(
         %{ $self->twitter_args },
         useragent_class => 'LWP::UserAgent::POE',
         username  => $self->twitter_username,
@@ -523,7 +552,7 @@ event poco_shutdown => sub {
 event ircd_daemon_nick => sub {
     my ($self, $sender, $nick) = @_[OBJECT, SENDER, ARG0];
 
-    $self->log->debug("[ircd_daemon_nick] $nick"); 
+    $self->log->debug("[ircd_daemon_nick] $nick");
 
     # if it's a nick change, we only get ARG0 and ARG1
     return unless defined $_[ARG2];
@@ -656,7 +685,7 @@ event ircd_daemon_privmsg => sub {
         return;
     }
 
-    unless ( eval { $self->twitter->new_direct_message({ user => $target_nick, text => $text }) } ) {
+    unless ( $self->twitter(new_direct_message => { user => $target_nick, text => $text }) ) {
         # TODO what channel?
         $self->bot_says($self->irc_channel, "new_direct_message failed.");
     }
@@ -698,9 +727,8 @@ event friends => sub {
     $self->log->debug("[twitter:friends] calling...");
     $page ||= 1;
     for (;;) {
-        my $friends = eval { $self->twitter->friends({page => $page}) }; 
+        my $friends = $self->twitter(friends => {page => $page});
         unless ( $friends ) {
-            $self->twitter_error("request for friends failed; retrying in $retry seconds");
             $_[KERNEL]->delay(friends => $retry, $page);
             return;
         }
@@ -734,7 +762,7 @@ event followers => sub {
 
     $self->log->debug("[twitter:followers] calling...");
     $page ||= 1;
-    while ( my $followers = eval { $self->twitter->followers({page => $page}) } ) {
+    while ( my $followers = $self->twitter(followers => {page => $page}) ) {
         $self->log->debug("    page: $page");
         unless ( $followers ) {
             $self->twitter_error("request for followers failed; retrying in $retry seconds");
@@ -764,23 +792,14 @@ event direct_messages => sub {
     # We don't want to flood the user with DMs, so if this is the first time,
     # i.e., no DM id in saved state, just set the high water mark and return.
     unless ( $self->state->direct_message_id ) {
-        if ( my $high_water = eval { $self->twitter->direct_messages } ) {
+        if ( my $high_water = $self->twitter('direct_messages') ) {
             $self->state->direct_message_id($high_water->[0]{id}) if @$high_water;
-        }
-        else {
-            $self->twitter_error('direct_messages failed');
         }
         return;
     }
 
     my $since_id = $self->state->direct_message_id || 1;
-    my $messages = eval {
-        $self->twitter->direct_messages({ since_id => $since_id })
-    };
-    unless ( $messages ) {
-        $self->twitter_error('direct_messages failed');
-        return;
-    }
+    my $messages = $self->twitter(direct_messages => { since_id => $since_id }) || return;
 
     if ( @$messages ) {
         $self->state->direct_message_id($messages->[0]{id})
@@ -824,14 +843,8 @@ event friends_timeline => sub {
     $self->log->debug("[friends_timeline]");
 
     my $since_id = $self->state->friends_timeline_id || 1;
-    my $statuses = eval { $self->twitter->friends_timeline({ since_id => $since_id }) };
+    my $statuses = $self->twitter(friends_timeline => { since_id => $since_id }) || return;
 
-    unless ( $statuses ) {
-        $self->twitter_error('friends_timeline request failed');
-        return;
-    }
-
-    # TODO: 4/6/2009 7:58 PM PST, died here ($statuses NOT an arrayref!):
     $self->log->debug("    friends_timeline returned ", scalar @$statuses, " statuses");
     $self->state->friends_timeline_id($statuses->[0]{id})
         if @$statuses && $statuses->[0]{id} > $since_id;  # lack of faith in twitterapi
@@ -930,9 +943,7 @@ sub merge_replies {
     }
 
     my $since_id = $self->state->reply_id || 1;
-    my $replies = eval {
-        $self->twitter->replies({ since_id => $since_id })
-    };
+    my $replies = $self->twitter(replies => { since_id => $since_id });
     if ( $replies ) {
         if ( @$replies ) {
             $self->log->debug("[merge_replies] ", scalar @$replies, " replies");
@@ -951,9 +962,6 @@ sub merge_replies {
             $statuses = [ sort { $b->{id} <=> $a->{id} } values %seen ];
         }
     }
-    else {
-        $self->twitter_error('replies failed');
-    }
     return $statuses;
 }
 
@@ -963,9 +971,8 @@ event user_timeline => sub {
     $self->log->debug("[user_timetline] calling...");
     # Work around a twitter api bug by passing id; without it, sometimes the wrong users statuses
     # are returned.
-    my $statuses = eval { $self->twitter->user_timeline({ id =>  $self->twitter_screen_name }) };
+    my $statuses = $self->twitter(user_timeline => { id =>  $self->twitter_screen_name });
     unless ( $statuses ) {
-        $self->twitter_error($self->irc_channel, 'user_timeline request failed; retrying in 60 seconds');
         $_[KERNEL]->delay(user_timeline => 60);
     }
     $self->log->debug("    urser_timeline returned");
@@ -1016,11 +1023,7 @@ event cmd_post => sub {
         return;
     }
 
-    my $status = eval { $self->twitter->update($text) };
-    unless ( $status ) {
-        $self->bot_says($channel, 'status update failed; try again later');
-        return;
-    }
+    my $status = $self->twitter(update => $text) || return;
 
     $self->log->debug("    update returned $status");
 
@@ -1042,11 +1045,7 @@ event cmd_follow => sub {
         return;
     }
 
-    my $friend = eval { $self->twitter->create_friend($id) };
-    unless ( $friend ) {
-        $self->bot_says($channel, 'create_friend failed');
-        return;
-    }
+    my $friend = $self->twitter(create_friend => $id) || return;
 
     my ($nick, $name) = @{$friend}{qw/screen_name name/};
     $self->post_ircd('add_spoofed_nick', { nick => $nick, ircname => $name });
@@ -1057,7 +1056,7 @@ event cmd_follow => sub {
     my @args = ($nick, $self->twitter_screen_name);
     @args = ( { user_a => $args[0], user_b => $args[1] } ) if Net::Twitter->VERSION >= 2.00;
 
-    if ( eval { $self->twitter->relationship_exists(@args) } ) {
+    if ( $self->twitter(relationship_exists => @args) ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $nick);
         $self->bot_notice($channel, qq/Now following $id./);
@@ -1079,11 +1078,7 @@ event cmd_unfollow => sub {
         return;
     }
 
-    my $friend = eval { $self->twitter->destroy_friend($id) };
-    unless ( $friend ) {
-        $self->bot_says($channel, 'destroy_friend failed');
-        return;
-    }
+    my $friend = $self->twitter(destroy_friend => $id) || return;
 
     $self->post_ircd(daemon_cmd_part => $id, $self->irc_channel);
     $self->post_ircd(del_spooked_nick => $id);
@@ -1104,10 +1099,7 @@ event cmd_block => sub {
         return;
     }
 
-    unless ( eval { $self->twitter->create_block($id) } ) {
-        $self->bot_says($channel, 'create_block failed');
-        return;
-    }
+    $self->twitter(create_block => $id) || return;
 
     if ( $self->get_user_by_nick($id) ) {
         $self->post_ircd(daemon_cmd_mode =>
@@ -1130,10 +1122,7 @@ event cmd_unblock => sub {
         return;
     }
 
-    unless ( eval { $self->twitter->destroy_block($id) } ) {
-        $self->bot_says($channel, 'destroy_block failed');
-        return;
-    }
+    $self->twitter(destroy_block => $id) || return;
 
     if ( $self->get_user_by_nick($id) ) {
         $self->post_ircd(daemon_cmd_mode =>
@@ -1158,7 +1147,7 @@ event cmd_whois => sub {
     unless ( $user ) {
         $self->log->debug("     $id not in users; fetching");
         my $arg = Email::Valid->address($id) ? { email => $id } : { id => $id };
-        $user = eval { $self->twitter->show_user($arg) };
+        $user = $self->twitter(show_user => $arg) || return;
     }
     if ( $user ) {
         $self->bot_says($channel, "$user->{screen_name} [$user->{id}]: $user->{name}, $user->{location}");
@@ -1190,7 +1179,7 @@ event cmd_notify => sub {
 
     my $method = $onoff eq 'on' ? 'enable_notifications' : 'disable_notifications';
     for my $nick ( @nicks ) {
-        unless ( eval { $self->twitter->$method({ id => $nick }) } ) {
+        unless ( $self->twitter($method => { id => $nick }) ) {
             $self->bot_says($channel, "notify $onoff failed for $nick");
         }
     }
@@ -1216,11 +1205,7 @@ event cmd_favorite => sub {
         return;
     }
 
-    my $recent = eval { $self->twitter->user_timeline({ id => $nick, count => $count }) };
-    unless ( $recent ) {
-        $self->bot_says($channel, 'user_timeline failed');
-        return;
-    }
+    my $recent = $self->twitter(user_timeline => { id => $nick, count => $count }) || return;
     if ( @$recent == 0 ) {
         $self->bot_says($channel, "$nick has no recent tweets");
         return;
@@ -1244,13 +1229,8 @@ sub handle_favorite {
 
     my @favorite_candidates = @{$self->stash->{favorite_candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @favorite_candidates ) {
-        if ( eval { $self->twitter->create_favorite({
-                    id => $favorite_candidates[$index - 1]
-                }) } ) {
+        if ( $self->twitter(create_favorite => { id => $favorite_candidates[$index - 1] }) ) {
             $self->bot_notice($channel, 'favorite added');
-        }
-        else {
-            $self->bot_says($channel, 'create_favorite failed');
         }
         $self->clear_stash;
         return 1; # handled
@@ -1299,16 +1279,13 @@ Displays the remaining number of API requests available in the current hour.
 event cmd_rate_limit_status => sub {
     my ($self, $channel) = @_[OBJECT, ARG0];
 
-    if ( my $r = eval { $self->twitter->rate_limit_status } ) {
+    if ( my $r = $self->twitter('rate_limit_status') ) {
         my $reset_time = sprintf "%02d:%02d:%02d", (localtime $r->{reset_time_in_seconds})[2,1,0];
         my $seconds_remaning = $r->{reset_time_in_seconds} - time;
         my $time_remaning = sprintf "%d:%02d", int($seconds_remaning / 60), $seconds_remaning % 60;
         $self->bot_says($channel, <<"");
 $r->{remaining_hits} API calls remaining for the next $time_remaning (until $reset_time), hourly limit is $r->{hourly_limit}
 
-    }
-    else {
-        $self->bot_says($channel, "rate_limit_status failed");
     }
 };
 
