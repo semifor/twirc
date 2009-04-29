@@ -571,6 +571,7 @@ event ircd_daemon_join => sub {
     return unless my($nick) = $user =~ /^([^!]+)!/;
     return if $self->get_user_by_nick($nick);
     return if $nick eq $self->irc_botname;
+    return if $nick eq $self->twitter_alias;
 
     if ( $ch eq $self->irc_channel ) {
         $self->joined(1);
@@ -892,7 +893,10 @@ event friends_timeline => sub {
             $self->post_ircd(daemon_cmd_nick => $user->{screen_name}, $name);
         }
 
-        $self->add_user($status->{user});
+        $self->add_user({
+            id => $status->{user}->{id},
+            screen_name => $name,
+        });
 
         $self->log->debug("    { $name, $text }");
         push @{ $self->tweet_stack }, { name => $name, text => $text }
