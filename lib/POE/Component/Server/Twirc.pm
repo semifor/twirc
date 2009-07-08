@@ -307,7 +307,7 @@ has _ircd => (
 has _twitter => ( isa => 'Net::Twitter', is => 'rw' );
 has _users_by_nick => (
     metaclass => 'Collection::Hash',
-    isa => 'HashRef[HashRef]',
+    isa => 'HashRef[HashRef|Object]',
     is => 'rw',
     default => sub { {} },
     provides => {
@@ -322,7 +322,7 @@ has _users_by_nick => (
 
 has _users_by_id => (
     metaclass => 'Collection::Hash',
-    isa => 'HashRef[HashRef]',
+    isa => 'HashRef[HashRef|Object]',
     is  => 'rw',
     default => sub { {} },
     provides => {
@@ -335,9 +335,9 @@ has _users_by_id => (
 has _joined => (
        accessor => 'joined', isa => 'Bool', is => 'rw', default => 0 );
 has _tweet_stack => (
-       accessor => 'tweet_stack', isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
+       accessor => 'tweet_stack', isa => 'ArrayRef[HashRef|Object]', is => 'rw', default => sub { [] } );
 has _dm_stack => (
-       accessor => 'dm_stack', isa => 'ArrayRef[HashRef]', is => 'rw', default => sub { [] } );
+       accessor => 'dm_stack', isa => 'ArrayRef[HashRef|Object]', is => 'rw', default => sub { [] } );
 
 has _stash => (
         accessor  => 'stash',
