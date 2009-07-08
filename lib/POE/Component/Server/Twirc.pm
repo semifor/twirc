@@ -4,7 +4,7 @@ use MooseX::POE;
 use MooseX::AttributeHelpers;
 use LWP::UserAgent::POE;
 use POE qw(Component::Server::IRC);
-use Net::Twitter;
+use Net::Twitter 3.0;
 use Email::Valid;
 use Text::Truncate;
 use POE::Component::Server::Twirc::LogAppender;
@@ -363,28 +363,12 @@ has _topic_id     => ( isa => 'Int', is => 'rw', default => 0 );
 sub twitter {
     my ($self, $method, @args) = @_;
 
-    # Get our own NT object so we can check get_error
-    my $nt = $self->_twitter->clone;
-    my $r = eval { $nt->$method(@args) };
-
-    # synthesize an error (broken twitter api!)
-    if ( $r && ref($r) eq 'HASH' && exists $r->{error} ) {
-        $nt->{response_error} = $r;
-        undef $r;
-    }
-
-    unless ( defined $r ) {
-        my $error = $nt->get_error;
-        if ( ref $error ) {
-            if ( ref($error) eq 'HASH' && exists $error->{error} ) {
-                $error = $error->{error};
-            }
-            else {
-                $error = 'Unexpected error type ' . ref($error);
-            }
+    my $r = eval { $self->_twitter->$method(@args) };
+    if ( $@ ) {
+        if ( blessed $@ && $@->can('code') && $@->code == 502 ) {
+            $@ = 'Fail Whale';
         }
-        $error = $nt->http_code == 502 ? 'Fail Whale' : '[' . $nt->http_code . '] ' . $error;
-        $error = $self->twitter_error("$method ->  $error");
+        $self->twitter_error("$method -> $@");
     }
 
     return $r;
@@ -499,12 +483,13 @@ sub START {
     $self->yield('delay_friends_timeline');
 
     $self->_twitter(Net::Twitter->new(
-        %{ $self->twitter_args },
+        legacy    => 0,
         useragent_class => 'LWP::UserAgent::POE',
         username  => $self->twitter_username,
         password  => $self->twitter_password,
         useragent => "twirc/$VERSION",
         source    => 'twircgw',
+        %{ $self->twitter_args },
     ));
 
     if ( $self->state_file && -r $self->state_file ) {

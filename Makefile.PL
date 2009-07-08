@@ -9,7 +9,7 @@ all_from 'lib/POE/Component/Server/Twirc.pm';
 install_script  'bin/twirc';
 
 requires 'MooseX::POE'                 => 0;
-requires 'Net::Twitter'                => '2.12';
+requires 'Net::Twitter'                => '3.00003';
 requires 'Email::Valid'                => 0;
 requires 'POE::Component::Server::IRC' => 0.02005;
 requires 'Log::Log4perl';
