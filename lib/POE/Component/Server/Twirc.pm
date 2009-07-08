@@ -695,8 +695,8 @@ event throttle_messages => sub {
     $self->log->debug("[throttle_messages] ", scalar @{$self->tweet_stack}, " messages");
 
     for my $entry ( @{$self->tweet_stack} ) {
-        my @lines = split /[\r\n]+/, $entry->text;
-        $self->post_ircd(daemon_cmd_privmsg => $entry->name, $self->irc_channel, $_)
+        my @lines = split /[\r\n]+/, $entry->{text};
+        $self->post_ircd(daemon_cmd_privmsg => $entry->{name}, $self->irc_channel, $_)
             for @lines;
     }
 
@@ -797,11 +797,7 @@ event direct_messages => sub {
                 $self->log->warn("Joining $nick from a direct message; expected $nick already joined.");
                 $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $msg->sender->name });
                 $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
-                $self->add_user({
-                    # don't have a status to store
-                    id => $msg->sender_id,
-                    screen_name => $msg->sender_screen_name,
-                });
+                $self->add_user($msg->sender);
             }
 
             push @{$self->dm_stack}, { name => $nick, text => $msg->text };
@@ -877,10 +873,7 @@ event friends_timeline => sub {
             $self->post_ircd(daemon_cmd_nick => $user->screen_name, $name);
         }
 
-        $self->add_user({
-            id => $status->user->id,
-            screen_name => $name,
-        });
+        $self->add_user($status->user);
 
         $self->log->debug("    { $name, $text }");
         push @{ $self->tweet_stack }, { name => $name, text => $text }
