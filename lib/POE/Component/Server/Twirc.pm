@@ -703,7 +703,7 @@ event throttle_messages => sub {
     $self->log->debug("[throttle_messages] ", scalar @{$self->tweet_stack}, " messages");
 
     while ( my $entry = shift @{$self->tweet_stack} ) {
-        my $name = $entry->screen_name;
+        my $name = $entry->user->screen_name;
         $name = $self->irc_alias if $name eq $self->twitter_screen_name;
         $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_)
             for split /[\r\n]+/, $entry->text;
