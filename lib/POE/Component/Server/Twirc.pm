@@ -233,6 +233,15 @@ Defaults to 60.
 
 has truncate_to         => ( isa => 'Int', is => 'ro', default => 60 );
 
+=item check_friends_timeline
+
+(Optional) If true, checks for friends status updates every C<twitter_retry>
+seconds. Default is 1.
+
+=cut
+
+has check_friends_timeline => ( isa => 'Bool', is => 'rw', default => 1 );
+
 =item check_replies
 
 (Optional) If true, checks for @replies when polling for friends' timeline updates
@@ -439,6 +448,31 @@ sub delete_user {
     $self->delete_user_by_nick($user->screen_name);
 }
 
+sub get_replies          { shift->get_statuses(replies          => 'reply_id'            ) }
+sub get_friends_timeline { shift->get_statuses(friends_timeline => 'friends_timeline_id' ) }
+
+sub get_statuses {
+    my ($self, $twitter_method, $state_id_name) = @_;
+
+    my $since_id = $self->state->$state_id_name || 1;
+    my $statuses = $self->twitter($twitter_method, { since_id => $since_id }) || [];
+    $self->state->$state_id_name($statuses->[0]->id) if @$statuses;
+
+    # work around a twitter bug where since_id is sometimes ignored
+    return [ grep { $_->id > $since_id } @$statuses ];
+}
+
+sub sort_unique_statuses {
+    my $self = shift;
+
+    my %seen;
+    my $statuses = [
+        grep { !$seen{$_->id}++ }
+        sort { $a->id <=> $b->id }
+        map { @$_ } @_
+    ];
+}
+
 sub START {
     my ($self) = @_;
 
@@ -487,7 +521,7 @@ sub START {
 
     $self->yield('friends');
     $self->yield('user_timeline'); # for topic setting
-    $self->yield('delay_friends_timeline');
+    $self->yield('poll_twitter');
 
     $self->_twitter(Net::Twitter->new(
         traits => [qw/API::REST InflateObjects/],
@@ -569,7 +603,7 @@ event ircd_daemon_join => sub {
         $self->joined(1);
         $self->log->debug("    joined!");
         $self->yield('display_direct_messages');
-        $self->yield('throttle_messages');
+        $self->yield('display_statuses');
         return;
     }
     elsif ( $self->log_channel && $ch eq $self->log_channel ) {
@@ -689,18 +723,18 @@ event ircd_daemon_privmsg => sub {
 ########################################################################
 
 # This is the main loop; check for updates every twitter_retry seconds.
-event delay_friends_timeline => sub {
+event poll_twitter => sub {
     my ($self) = @_;
 
-    $self->yield('direct_messages') if $self->check_direct_messages;
-    $self->yield('friends_timeline');
-    $_[KERNEL]->delay(delay_friends_timeline => $self->twitter_retry);
+    $self->yield('direct_messages')  if $self->check_direct_messages;
+    $self->yield('timeline') if $self->check_friends_timeline;
+    $_[KERNEL]->delay(poll_twitter => $self->twitter_retry);
 };
 
-event throttle_messages => sub {
+event display_statuses => sub {
     my ($self) = @_;
 
-    $self->log->debug("[throttle_messages] ", scalar @{$self->tweet_stack}, " messages");
+    $self->log->debug("[display_statuses] ", scalar @{$self->tweet_stack}, " messages");
 
     while ( my $entry = shift @{$self->tweet_stack} ) {
         my $name = $entry->user->screen_name;
@@ -824,28 +858,17 @@ event display_direct_messages => sub {
     }
 };
 
-event friends_timeline => sub {
+event timeline => sub {
     my ($self) = @_;
 
-    $self->log->debug("[friends_timeline]");
-
-    my $since_id = $self->state->friends_timeline_id || 1;
-    my $statuses = $self->twitter(friends_timeline => { since_id => $since_id }) || return;
-
-    $self->log->debug("    friends_timeline returned ", scalar @$statuses, " statuses");
-    $self->state->friends_timeline_id($statuses->[0]->id)
-        if @$statuses && $statuses->[0]->id > $since_id;  # lack of faith in twitterapi
-
-    $statuses = $self->merge_replies($statuses);
-
-    my $channel = $self->irc_channel;
     my $new_topic;
-    for my $status (reverse @{ $statuses }) {
-        # Work around twitter api bug where since_id is ignored. (I haven't seen this bug
-        # with friends_timeline---only with direct_messages and replies.  Adding the workaround
-        # for friends_timeline proactively.)
-        next unless $status->id > $since_id;
+    my $channel = $self->irc_channel;
+    my $statuses = $self->sort_unique_statuses(
+        $self->check_friends_timeline && $self->get_friends_timeline || [],
+        $self->check_replies          && $self->get_replies          || [],
+    );
 
+    while ( my $status = shift @$statuses ) {
         my $id      = $status->user->id;
         my $name    = $status->user->screen_name;
         my $ircname = $status->user->name;
@@ -889,7 +912,7 @@ event friends_timeline => sub {
     }
 
     $self->set_topic($new_topic) if $new_topic;
-    $self->yield('throttle_messages') if $self->joined;
+    $self->yield('display_statuses') if $self->joined;
     $self->yield('poll_cleanup');
 };
 
@@ -916,40 +939,6 @@ event poll_cleanup => sub {
         }
     }
 };
-
-sub merge_replies {
-    my ($self, $statuses) = @_;
-    return $statuses unless $self->check_replies;
-
-    # TODO: find a better way to initialize this??
-    unless ( $self->state->reply_id ) {
-        $self->state->reply_id(
-            @$statuses ? $statuses->[-1]->id : $self->state->user_timeline_id
-         );
-    }
-
-    my $since_id = $self->state->reply_id || 1;
-    my $replies = $self->twitter(replies => { since_id => $since_id });
-    if ( $replies ) {
-        if ( @$replies ) {
-            $self->log->debug("[merge_replies] ", scalar @$replies, " replies");
-
-            $self->state->reply_id($replies->[0]->id)
-                if $replies->[0]->id > $since_id; # lack of faith in twitterapi
-
-            # TODO: clarification needed: I'm assuming we get replies
-            # from friends in *both* friends_timeline and replies,
-            # so, we need to weed them.
-            my %seen = map { ($_->id, $_) }
-                       @{$statuses},
-                       # work around a twitter api bug where the since_id param is ignored
-                       grep { $_->id > $since_id } @{$replies};
-
-            $statuses = [ sort { $b->id <=> $a->id } values %seen ];
-        }
-    }
-    return $statuses;
-}
 
 event user_timeline => sub {
     my ($self) = @_;
@@ -1228,6 +1217,23 @@ sub handle_favorite {
     return 0; # unhandled
 };
 
+=item check_friends_timeline I<on|off>
+
+Turns friends timeline checking on or off.  See L</check_friends_timeline> in
+configuration.
+
+=cut
+
+event cmd_check_friends_timeline => sub {
+    my ($self, $channel, $onoff) = @_[OBJECT, ARG0, ARG1];
+
+    unless ( $onoff && $onoff =~ /^on|off$/ ) {
+        $self->bot_says($channel, "Usage: check_friends_timeline on|off");
+        return;
+    }
+    $self->check_friends_timeline($onoff eq 'on' ? 1 : 0);
+};
+
 =item check_replies I<on|off>
 
 Turns reply checking on or off.  See L</"check_replies"> in configuration.
@@ -1301,7 +1307,7 @@ event cmd_help => sub {
 event cmd_refresh => sub {
     my ($self) = @_;
 
-    $self->yield('delay_friends_timeline');
+    $self->yield('poll_twitter');
 };
 
 =item verbose_refresh I<on|off>
