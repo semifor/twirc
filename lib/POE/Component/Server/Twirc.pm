@@ -783,19 +783,19 @@ event direct_messages => sub {
     # i.e., no DM id in saved state, just set the high water mark and return.
     unless ( $self->state->direct_message_id ) {
         if ( my $high_water = $self->twitter('direct_messages') ) {
-            $self->state->direct_message_id($high_water->[0]->id) if @$high_water;
+            $self->state->direct_message_id(@$hig_water ? $high_water->[0]->id : 1);
         }
         return;
     }
 
-    my $since_id = $self->state->direct_message_id || 1;
+    my $since_id = $self->state->direct_message_id;
     my $messages = $self->twitter(direct_messages => { since_id => $since_id }) || return;
 
     if ( @$messages ) {
         $self->state->direct_message_id($messages->[0]->id)
             if $messages->[0]->id > $since_id; # lack of faith in twitterapi
 
-        for my $msg ( reverse @$messages ) {
+        while ( my $msg = pop @$messages ) {
             # workarond twitter bug where since_id parameter is ignored:
             next unless $msg->id > $since_id;
 
