@@ -783,7 +783,7 @@ event direct_messages => sub {
     # i.e., no DM id in saved state, just set the high water mark and return.
     unless ( $self->state->direct_message_id ) {
         if ( my $high_water = $self->twitter('direct_messages') ) {
-            $self->state->direct_message_id(@$hig_water ? $high_water->[0]->id : 1);
+            $self->state->direct_message_id(@$high_water ? $high_water->[0]->id : 1);
         }
         return;
     }
