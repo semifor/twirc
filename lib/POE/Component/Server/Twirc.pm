@@ -332,12 +332,20 @@ has _users_by_id => (
     },
 );
 
-has _joined => (
-       accessor => 'joined', isa => 'Bool', is => 'rw', default => 0 );
+has _joined => ( accessor => 'joined', isa => 'Bool', is => 'rw', default => 0 );
+
 has _tweet_stack => (
-       accessor => 'tweet_stack', isa => 'ArrayRef[HashRef|Object]', is => 'rw', default => sub { [] } );
+       accessor => 'tweet_stack',
+       isa      => 'ArrayRef[Object]',
+       is       => 'rw',
+       default  => sub { [] },
+);
 has _dm_stack => (
-       accessor => 'dm_stack', isa => 'ArrayRef[HashRef|Object]', is => 'rw', default => sub { [] } );
+       accessor => 'dm_stack',
+       isa      => 'ArrayRef[Object]',
+       is       => 'rw',
+       default  => sub { [] },
+);
 
 has _stash => (
         accessor  => 'stash',
@@ -694,13 +702,12 @@ event throttle_messages => sub {
 
     $self->log->debug("[throttle_messages] ", scalar @{$self->tweet_stack}, " messages");
 
-    for my $entry ( @{$self->tweet_stack} ) {
-        my @lines = split /[\r\n]+/, $entry->{text};
-        $self->post_ircd(daemon_cmd_privmsg => $entry->{name}, $self->irc_channel, $_)
-            for @lines;
+    while ( my $entry = shift @{$self->tweet_stack} ) {
+        my $name = $entry->screen_name;
+        $name = $self->irc_alias if $name eq $self->twitter_screen_name;
+        $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_)
+            for split /[\r\n]+/, $entry->text;
     }
-
-    $self->tweet_stack([]);
 };
 
 # Add friends to the channel
@@ -800,7 +807,7 @@ event direct_messages => sub {
                 $self->add_user($msg->sender);
             }
 
-            push @{$self->dm_stack}, { name => $nick, text => $msg->text };
+            push @{$self->dm_stack}, $msg;
         }
         $self->yield('display_direct_messages') if $self->joined;
     }
@@ -810,9 +817,10 @@ event display_direct_messages => sub {
     my ($self) = @_;
 
     while ( my $msg = shift @{$self->dm_stack} ) {
-        my @lines = split /\r?\n/, $msg->text;
-        $self->post_ircd(daemon_cmd_privmsg => $msg->name, $self->irc_nickname, $_)
-            for @lines;
+        my $name = $msg->sender_screen_name;
+        $name = $self->irc_alias if $name eq $self->twitter_screen_name;
+        $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_nickname, $_)
+            for split /\r?\n/, $msg->text;
     }
 };
 
@@ -853,9 +861,6 @@ event friends_timeline => sub {
                 if $status->id > $self->state->user_timeline_id; # lack of faith in twitterapi
             $new_topic = $status unless $status->text =~ /^\s*\@/;
 
-            # TODO: is this even necessary? Can we just send a privmsg from a real user?
-            $name = $self->twitter_alias if $self->twitter_alias;
-
             # if we posted this status from twirc, we've already seen it
             my $seen = delete $self->_unread_posts->{$status->id};
             next if $seen && !$self->echo_posts;
@@ -876,7 +881,7 @@ event friends_timeline => sub {
         $self->add_user($status->user);
 
         $self->log->debug("    { $name, $text }");
-        push @{ $self->tweet_stack }, { name => $name, text => $text }
+        push @{ $self->tweet_stack }, $status;
     }
 
     if ( @$statuses == 0 && $self->verbose_refresh ) {
@@ -1034,9 +1039,7 @@ event cmd_follow => sub {
     $self->post_ircd(daemon_cmd_join => $name, $self->irc_channel);
     $self->add_user($friend);
 
-    # work around back compat bug in Net::Twitter 2.01
     my @args = ($nick, $self->twitter_screen_name);
-    @args = ( { user_a => $args[0], user_b => $args[1] } ) if Net::Twitter->VERSION >= 2.00;
 
     if ( $self->twitter(relationship_exists => @args) ) {
         $self->post_ircd(daemon_cmd_mode =>
