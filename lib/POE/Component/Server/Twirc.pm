@@ -727,7 +727,7 @@ event poll_twitter => sub {
     my ($self) = @_;
 
     $self->yield('direct_messages')  if $self->check_direct_messages;
-    $self->yield('timeline') if $self->check_friends_timeline;
+    $self->yield('timeline');
     $_[KERNEL]->delay(poll_twitter => $self->twitter_retry);
 };
 
