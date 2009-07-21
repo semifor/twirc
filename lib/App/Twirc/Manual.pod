@@ -427,6 +427,30 @@ In your IRC client, connect to both instances (C<irssi> here):
 Now you've got 2 channels, one for each account---in my case, C<&twitter> for
 C<semifor> and C<&twirc> for C<twirc>.
 
+=head2 PLUGINS
+
+Plugins are modules that are optionally included by specifying them in user
+configuration file in the C<plugins> section.  Some of the plugins included in
+the distribution are:
+
+=over 4
+
+=item SquashWhiteSpace
+
+Squashes whitespace in tweets to a single space. See L<App::Twirc::Plugin::SquashWhiteSpace>.
+
+=item BangCommands
+
+Commands are prefixed with a bang (i.e., exclamation point "!").  Text entered
+without a bang prefix is posted as a status update.  See L<App::Twirc::Plugin::BangCommands>.
+
+=item SecondaryAccount
+
+Cross-posts status updates to one or more secondary Twitter (or Twitter API
+compatible, like Identi.ca) accounts.  See L<App::Twirc::Plugin::SecondaryAccount>.
+
+=back
+
 =head1 SUPPORT
 
 C<Twirc> is free open source software with no warranty of any kind.  That said,

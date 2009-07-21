@@ -48,6 +48,6 @@
 ^Build.PL$
 
 # local config files
-^\w+\.conf$
-^[a-z]+\.yml$
-.*\.state$
+\.conf$
+(?<!^META).yml$
+\.state$

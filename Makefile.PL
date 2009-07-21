@@ -1,4 +1,4 @@
-use inc::Module::Install 0.67;
+use inc::Module::Install;
 use strict;
 use warnings;
 
@@ -24,9 +24,12 @@ requires 'FindBin';
 requires 'MooseX::Storage';
 requires 'Path::Class::File';
 
-eval {
+if ( $Module::Install::Author ) {
     system 'pod2text lib/App/Twirc/Manual.pod > README';
-};
+}
 
+auto_set_repository;
+auto_manifest;
 auto_install;
+
 WriteAll;

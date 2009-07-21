@@ -3,7 +3,8 @@ use warnings;
 use strict;
 use Test::More;
 
-plan skip_all => 'set TEST_AUTHOR to enable this test' unless $ENV{TEST_AUTHOR};
+plan skip_all => 'set TEST_POD to enable this test'
+    unless $ENV{TEST_POD} || -e 'MANIFEST.SKIP';
 
 eval "use Pod::Coverage 0.19";
 plan skip_all => 'Pod::Coverage 0.19 required' if $@;
@@ -20,16 +21,23 @@ plan tests => 2;
 pod_coverage_ok(
     'POE::Component::Server::Twirc',
     { trustme => [ map qr/^$_$/, qw/
-        DEFAULT
-        START
-        bot_says
-        bot_notice
-        handle_favorite
-        merge_replies
-        nicks_alternation
-        post_ircd
-        set_topic
-        twitter_error
+            DEFAULT
+            START
+            add_user
+            bot_notice
+            bot_says
+            delete_user
+            get_friends_timeline
+            get_replies
+            get_statuses
+            handle_favorite
+            merge_replies
+            nicks_alternation
+            post_ircd
+            set_topic
+            sort_unique_statuses
+            twitter
+            twitter_error
         /],
     },
     'POE::Component::Server::Twirc coverage'
