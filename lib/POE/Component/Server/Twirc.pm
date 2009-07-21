@@ -4,18 +4,13 @@ use MooseX::POE;
 use MooseX::AttributeHelpers;
 use LWP::UserAgent::POE;
 use POE qw(Component::Server::IRC);
-use Net::Twitter 3.0;
+use Net::Twitter 3.04002; # for decode_html_entities
 use Email::Valid;
 use Text::Truncate;
 use POE::Component::Server::Twirc::LogAppender;
 use POE::Component::Server::Twirc::State;
 
 with 'MooseX::Log::Log4perl';
-
-# Net::Twitter returns text with encoded HTML entities.  I *think* decoding
-# properly belongs in Net::Twitter.  So, if it gets added, there:
-# TODO: remove HTML::Entities and decode_entities calls.
-use HTML::Entities;
 
 our $VERSION = '0.07';
 
@@ -423,8 +418,7 @@ sub set_topic {
     return unless $status->id > $self->_topic_id;
 
     $self->_topic_id($status->id);
-    $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel,
-           decode_entities($status->text));
+    $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel, $status->text);
 };
 
 # match any nick
@@ -524,12 +518,13 @@ sub START {
     $self->yield('poll_twitter');
 
     $self->_twitter(Net::Twitter->new(
-        traits => [qw/API::REST InflateObjects/],
-        useragent_class => 'LWP::UserAgent::POE',
-        username  => $self->twitter_username,
-        password  => $self->twitter_password,
-        useragent => "twirc/$VERSION",
-        source    => 'twircgw',
+        traits               => [qw/API::REST InflateObjects/],
+        useragent_class      => 'LWP::UserAgent::POE',
+        username             => $self->twitter_username,
+        password             => $self->twitter_password,
+        useragent            => "twirc/$VERSION",
+        source               => 'twircgw',
+        decode_html_entities => 1,
         %{ $self->twitter_args },
     ));
 
@@ -872,7 +867,6 @@ event timeline => sub {
         my $id      = $status->user->id;
         my $name    = $status->user->screen_name;
         my $ircname = $status->user->name;
-        my $text = decode_entities($status->text);
 
         # alias our twitter_name if configured
         # (to avoid a collision in case our twitter screen name and irc nick are the same)
@@ -903,7 +897,7 @@ event timeline => sub {
 
         $self->add_user($status->user);
 
-        $self->log->debug("    { $name, $text }");
+        $self->log->debug("    { $name, $status->{text} }");
         push @{ $self->tweet_stack }, $status;
     }
 
