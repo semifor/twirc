@@ -9,6 +9,7 @@ use Email::Valid;
 use Text::Truncate;
 use POE::Component::Server::Twirc::LogAppender;
 use POE::Component::Server::Twirc::State;
+use Encode qw/decode/;
 
 with 'MooseX::Log::Log4perl';
 
@@ -372,6 +373,8 @@ sub _build_state { POE::Component::Server::Twirc::State->new }
 has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
 has _topic_id     => ( isa => 'Int', is => 'rw', default => 0 );
 
+has client_encoding => ( isa => 'Str', is  => 'rw', default => sub { 'utf-8' } );
+
 sub twitter {
     my ($self, $method, @args) = @_;
 
@@ -640,6 +643,8 @@ event ircd_daemon_public => sub {
 
     return unless $channel eq $self->irc_channel;
 
+    $text = decode($self->client_encoding, $text);
+
     $text =~ s/\s+$//;
 
     my $nick = ( $user =~ m/^(.*)!/)[0];
@@ -700,6 +705,8 @@ event ircd_daemon_privmsg => sub {
     # owning user is the only one allowed to send direct messages
     my $me = $self->irc_nickname;
     return unless $user =~ /^\Q$me\E!/;
+
+    $text = decode($self->client_encoding, $text);
 
     unless ( $self->get_user_by_nick($target_nick) ) {
         # TODO: handle the error the way IRC would?? (What channel?)
