@@ -1,4 +1,4 @@
-twitirc.yml
+.*.swp
 Makefile
 blib/*
 MANIFEST
@@ -7,3 +7,6 @@ inc/*
 pm_to_blib
 *.bak
 *.gz
+*.yml
+*.conf
+*.state

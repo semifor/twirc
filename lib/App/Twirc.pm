@@ -46,12 +46,12 @@ sub run {
         die "$@\n" if $@;
     }
 
-    $config->{plugins} = $self->init_plugins($config);
+    $config->{plugins} = $self->_init_plugins($config);
     POE::Component::Server::Twirc->new($config);
     POE::Kernel->run;
 }
 
-sub init_plugins {
+sub _init_plugins {
     my ($self, $config) = @_;
 
     my $plugins = delete $config->{plugins};

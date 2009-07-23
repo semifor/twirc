@@ -9,6 +9,8 @@ BEGIN {
     package # hide from PAUSE
         Net::Twitter;
 
+    our $VERSION = '3.04002';
+
     sub new {
         my $class = shift;
         bless { @_ }, $class;
