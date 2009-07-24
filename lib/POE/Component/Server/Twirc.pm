@@ -740,7 +740,7 @@ event display_statuses => sub {
 
     while ( my $entry = shift @{$self->tweet_stack} ) {
         my $name = $entry->user->screen_name;
-        $name = $self->irc_alias if $name eq $self->twitter_screen_name;
+        $name = $self->twitter_alias if $name eq $self->irc_nickname;
         $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_)
             for split /[\r\n]+/, $entry->text;
     }
@@ -854,7 +854,7 @@ event display_direct_messages => sub {
 
     while ( my $msg = shift @{$self->dm_stack} ) {
         my $name = $msg->sender_screen_name;
-        $name = $self->irc_alias if $name eq $self->twitter_screen_name;
+        $name = $self->twitter_alias if $name eq $self->irc_nickname;
         $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_nickname, $_)
             for split /\r?\n/, $msg->text;
     }
