@@ -621,7 +621,9 @@ event ircd_daemon_part => sub {
     return unless my($nick) = $user_name =~ /^([^!]+)!/;
     return if $nick eq $self->irc_botname;
 
-    $self->delete_user($self->get_user_by_nick($nick));
+    if ( my $user = $self->get_user_by_nick($nick) ) {
+        $self->delete_user($user);
+    }
 
     $self->joined(0) if $ch eq $self->irc_channel && $nick eq $self->irc_nickname;
 };
