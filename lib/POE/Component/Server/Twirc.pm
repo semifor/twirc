@@ -13,7 +13,7 @@ use Encode qw/decode/;
 
 with 'MooseX::Log::Log4perl';
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 =head1 NAME
 
