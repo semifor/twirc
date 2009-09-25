@@ -1127,13 +1127,12 @@ event cmd_whois => sub {
         $user = $self->twitter(show_user => $arg) || return;
     }
     if ( $user ) {
-        $self->bot_says($channel, '%s [%s]: %s, %s',
-            $user->screen_name,
-            $user->id,
-            $user->name,
-            $user->location,
-        );
-        for ( $user->description, $user->url ) {
+        for (
+            sprintf('%s [%s]: %s, %s', @{$user}{qw/screen_name id name location/}),
+            $user->description,
+            $user->url,
+        )
+        {
             $self->bot_says($channel, $_) if $_;
         }
     }
