@@ -1,3 +1,7 @@
+0.09 2009-09-25
+    - Replaced "page" parameter usage with "cursor" (friends/followers)
+    - Fixed missing sprintf in whois handler
+
 0.08 2009-08-17
     - Fixed: s/irc_alias/twitter_alias/
     - Fixed: dereferencing an undefiend user object
