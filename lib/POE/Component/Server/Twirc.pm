@@ -750,29 +750,22 @@ event display_statuses => sub {
 
 # Add friends to the channel
 event friends => sub {
-    my ($self, $page ) = @_[OBJECT, ARG0];
+    my ($self, $cursor ) = @_[OBJECT, ARG0];
 
     my $retry = $self->twitter_retry_on_error;
 
     $self->log->debug("[twitter:friends] calling...");
-    $page ||= 1;
-    for (;;) {
-        my $friends = $self->twitter(friends => {page => $page});
-        unless ( $friends ) {
-            $_[KERNEL]->delay(friends => $retry, $page);
+    for ( $cursor ||= -1; $cursor;) {
+        my $r = $self->twitter(friends => { cursor => $cursor });
+        unless ( $r ) {
+            $_[KERNEL]->delay(friends => $retry, $cursor);
             return;
         }
-        $self->log->debug("    friends returned ", scalar @$friends, " friends");
+        $self->log->debug("    friends returned ", scalar @{$r->{users}}, " friends");
 
-        ++$page;
+        $cursor = $r->{next_cursor};
 
-        # Current API gets 100 friends per page.  If we have exactly 100 friends
-        # we have to try again with page=2 and we should get (I'm assuming, here)
-        # an empty arrayref.  What if the API changes to 200, etc.?  Might as well
-        # just loop until we get an empty arrayref.  That will handle either case.
-        last unless @$friends;
-
-        for my $friend ( @$friends ) {
+        for my $friend ( @{$r->{users}} ) {
             next if $self->get_user_by_id($friend->id);
 
             $self->post_ircd(add_spoofed_nick => { nick => $friend->screen_name, ircname => $friend->name });
@@ -785,27 +778,24 @@ event friends => sub {
 
 # Give friends who are also followers voice; it's just a visual hint to the user.
 event followers => sub {
-    my ($self, $page ) = @_[OBJECT, ARG0];
+    my ($self, $cursor ) = @_[OBJECT, ARG0];
 
     my $retry = $self->twitter_retry_on_error;
 
     $self->log->debug("[twitter:followers] calling...");
-    $page ||= 1;
-    while ( my $followers = $self->twitter(followers => {page => $page}) ) {
-        $self->log->debug("    page: $page");
-        unless ( $followers ) {
+    for ( $cursor ||= -1; $cursor; ) {
+        my $r = $self->twitter(followers => { cursor => $cursor });
+        unless ( $r ) {
             $self->twitter_error("request for followers failed; retrying in $retry seconds");
-            $_[KERNEL]->delay(followers => $retry, $page);
+            $_[KERNEL]->delay(followers => $retry, $cursor);
             return;
         }
-        ++$page;
 
-        $self->log->debug("    followers returned ", scalar @$followers, " followers");
+        $cursor = $r->{next_cursor};
 
-        # see comments for event friends
-        last unless @$followers;
+        $self->log->debug("    followers returned ", scalar @{$r->{users}}, " followers");
 
-        for my $follower ( @$followers ) {
+        for my $follower ( @{$r->{users}} ) {
             if ( $self->get_user_by_nick($follower->screen_name) ) {
                 $self->post_ircd(daemon_cmd_mode =>
                     $self->irc_botname, $self->irc_channel, '+v', $follower->screen_name);
