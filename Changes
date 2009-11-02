@@ -1,3 +1,6 @@
+0.10 2009-11-02
+    - Replaced Text::Truncate with String::Truncate
+
 0.09 2009-09-25
     - Replaced "page" parameter usage with "cursor" (friends/followers)
     - Fixed missing sprintf in whois handler

@@ -6,14 +6,14 @@ use LWP::UserAgent::POE;
 use POE qw(Component::Server::IRC);
 use Net::Twitter 3.04002; # for decode_html_entities
 use Email::Valid;
-use Text::Truncate;
+use String::Truncate qw/elide/;
 use POE::Component::Server::Twirc::LogAppender;
 use POE::Component::Server::Twirc::State;
 use Encode qw/decode/;
 
 with 'MooseX::Log::Log4perl';
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 =head1 NAME
 
@@ -1189,7 +1189,7 @@ event cmd_favorite => sub {
 
     $self->bot_says($channel, 'Which tweet?');
     for ( 1..@$recent ) {
-        $self->bot_says($channel, "[$_] " . truncstr($recent->[$_ - 1]->text, $self->truncate_to));
+        $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]->text, $self->truncate_to));
     }
 };
 

@@ -15,7 +15,7 @@ requires 'POE::Component::Server::IRC' => 0.02005;
 requires 'Log::Log4perl';
 requires 'POE::Component::TSTP';
 requires 'LWP::UserAgent::POE'         => '0.02';
-requires 'Text::Truncate';
+requires 'String::Truncate';
 requires 'MooseX::SimpleConfig';
 requires 'MooseX::Getopt'              => '0.15';
 requires 'MooseX::Log::Log4perl::Easy';
