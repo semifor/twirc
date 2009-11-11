@@ -445,8 +445,8 @@ sub delete_user {
     $self->delete_user_by_nick($user->screen_name);
 }
 
-sub get_replies          { shift->get_statuses(replies          => 'reply_id'            ) }
-sub get_friends_timeline { shift->get_statuses(friends_timeline => 'friends_timeline_id' ) }
+sub get_replies          { shift->get_statuses(replies       => 'reply_id'            ) }
+sub get_friends_timeline { shift->get_statuses(home_timeline => 'friends_timeline_id' ) }
 
 sub get_statuses {
     my ($self, $twitter_method, $state_id_name) = @_;
