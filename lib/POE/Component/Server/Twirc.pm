@@ -1280,6 +1280,78 @@ event cmd_rate_limit_status => sub {
     }
 };
 
+=item retweet
+
+Re-tweet a a friends message.  Takes the frined's screen name and prompts with a list of
+recent messages to choose from.
+
+=cut
+
+event cmd_retweet => sub {
+    my ( $self, $channel, $args ) = @_[OBJECT, ARG0, ARG1];
+
+    my ( $nick, $count ) = split /\s+/, $args;
+    $count ||= $self->favorites_count;
+
+    unless ( $self->get_user_by_nick($nick) ) {
+        $self->bot_says($channel, "You're not following $nick.");
+        return;
+    }
+
+    my $recent = $self->twitter(user_timeline => { id => $nick, count => $count }) || return;
+    if ( @$recent == 0 ) {
+        $self->bot_says($channel, "$nick has no recent tweets");
+        return;
+    }
+
+    $self->stash({
+        retweet_candidates => [ map $_->id, @$recent ],
+        handler => 'handle_retweet',
+    });
+
+    $self->bot_says($channel, 'Which tweet?');
+    for ( 1..@$recent ) {
+        $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]->text, $self->truncate_to));
+    }
+};
+
+sub handle_retweet {
+    my ($self, $channel, $index) = @_;
+
+    my @candidates = @{$self->stash->{retweet_candidates} || []};
+    if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
+        $self->twitter(create_favorite => { id => $candidates[$index - 1] });
+        $self->clear_stash;
+        return 1; # handled
+    }
+    return 0; # unhandled
+};
+
+=item report_spam
+
+Report 1 or more screen names as spammers.
+
+=cut
+
+event cmd_report_spam => sub {
+    my ( $self, $channel, $args ) = @_[OBJECT, ARG0, ARG1];
+
+    unless ( $args ) {
+        $self->bot_says($channel, "spam requires list of 1 or more spammers");
+        return;
+    }
+
+    for my $spammer ( split /\s+/, $args ) {
+        $self->yield(report_spam_helper => $spammer);
+    }
+};
+
+event report_spam_helper => sub {
+    my ( $self, $spammer ) = @_[OBJECT, ARG0];
+
+    $self->twitter(report_spam => { screen_name => $spammer });
+};
+
 =item help
 
 Display a simple help message
@@ -1292,6 +1364,7 @@ event cmd_help => sub {
     $self->bot_says($channel, join ' ' => sort qw/
         post follow unfollow block unblock whois notify refresh favorite
         check_replies rate_limit_status verbose_refresh
+        retweet report_spam
     /);
     $self->bot_says($channel, '/msg nick for a direct message.')
 };
