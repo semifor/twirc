@@ -1156,10 +1156,11 @@ event cmd_notify => sub {
     }
 };
 
-=item favorite I<friend> [I<count>]
+=item favorite I<screen_name> [I<count>]
 
-Mark I<friend>'s tweet as a favorite.  Optionally, specify the number of tweets
-to display for selection with I<count> (Defaults to 3.)
+Mark a tweet as a favorite.  Specify the user by I<screen_name> and select from a
+list of recent tweets. Optionally, specify the number of tweets to display for
+selection with I<count> (Defaults to 3.)
 
 =cut
 
@@ -1171,11 +1172,6 @@ event cmd_favorite => sub {
 
     $self->log->debug("[cmd_favorite] $nick");
 
-    unless ( $self->get_user_by_nick($nick) ) {
-        $self->bot_says($channel, "You're not following $nick.");
-        return;
-    }
-
     my $recent = $self->twitter(user_timeline => { id => $nick, count => $count }) || return;
     if ( @$recent == 0 ) {
         $self->bot_says($channel, "$nick has no recent tweets");
@@ -1183,8 +1179,8 @@ event cmd_favorite => sub {
     }
 
     $self->stash({
-        favorite_candidates => [ map $_->id, @$recent ],
-        handler => 'handle_favorite',
+        handler    => 'handle_favorite',
+        candidates => [ map $_->id, @$recent ],
     });
 
     $self->bot_says($channel, 'Which tweet?');
@@ -1198,9 +1194,9 @@ sub handle_favorite {
 
     $self->log->debug("[handle_favorite] $index");
 
-    my @favorite_candidates = @{$self->stash->{favorite_candidates} || []};
-    if ( $index =~ /^\d+$/ && 0 < $index && $index <= @favorite_candidates ) {
-        if ( $self->twitter(create_favorite => { id => $favorite_candidates[$index - 1] }) ) {
+    my @candidates = @{$self->stash->{candidates} || []};
+    if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
+        if ( $self->twitter(create_favorite => { id => $candidates[$index - 1] }) ) {
             $self->bot_notice($channel, 'favorite added');
         }
         $self->clear_stash;
@@ -1280,10 +1276,11 @@ event cmd_rate_limit_status => sub {
     }
 };
 
-=item retweet
+=item retweet I<screen_name> [I<count>]
 
-Re-tweet a a friends message.  Takes the frined's screen name and prompts with a list of
-recent messages to choose from.
+Re-tweet another user's status.  Specify the user by I<screen_name> and select from a
+list of recent tweets. Optionally, specify the number of tweets to display for
+selection with I<count> (Defaults to 3.)
 
 =cut
 
@@ -1293,11 +1290,6 @@ event cmd_retweet => sub {
     my ( $nick, $count ) = split /\s+/, $args;
     $count ||= $self->favorites_count;
 
-    unless ( $self->get_user_by_nick($nick) ) {
-        $self->bot_says($channel, "You're not following $nick.");
-        return;
-    }
-
     my $recent = $self->twitter(user_timeline => { id => $nick, count => $count }) || return;
     if ( @$recent == 0 ) {
         $self->bot_says($channel, "$nick has no recent tweets");
@@ -1305,8 +1297,8 @@ event cmd_retweet => sub {
     }
 
     $self->stash({
-        retweet_candidates => [ map $_->id, @$recent ],
-        handler => 'handle_retweet',
+        handler    => 'handle_retweet',
+        candidates => [ map $_->id, @$recent ],
     });
 
     $self->bot_says($channel, 'Which tweet?');
@@ -1318,9 +1310,69 @@ event cmd_retweet => sub {
 sub handle_retweet {
     my ($self, $channel, $index) = @_;
 
-    my @candidates = @{$self->stash->{retweet_candidates} || []};
+    my @candidates = @{$self->stash->{candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
-        $self->twitter(create_favorite => { id => $candidates[$index - 1] });
+        $self->twitter(retweet => { id => $candidates[$index - 1] });
+        $self->clear_stash;
+        return 1; # handled
+    }
+    return 0; # unhandled
+};
+
+=item reply I<screen_name> [I<-count>] I<message>
+
+Reply to another user's status.  Specify the user by I<screen_name> and select
+from a list of recent tweets. Optionally, specify the number of tweets to
+display for selection with I<-count> (Defaults to 3.) Note that the count
+parameter is prefixed with a dash.
+
+=cut
+
+event cmd_reply => sub {
+    my ( $self, $channel, $args ) = @_[OBJECT, ARG0, ARG1];
+
+    my ( $nick, $count, $message ) = $args =~ /
+        ^@?(\w+)        # nick; strip leading @ if there is one
+        \s+
+        (?:-(\d+)\s+)?  # optional count: -N
+        (.*)            # the message
+    /x;
+    $count ||= $self->favorites_count;
+
+    my $recent = $self->twitter(user_timeline => { id => $nick, count => $count }) || return;
+    if ( @$recent == 0 ) {
+        $self->bot_says($channel, "$nick has no recent tweets");
+        return;
+    }
+
+    $self->stash({
+        handler    => 'handle_reply',
+        candidates => [ map $_->id, @$recent ],
+        recipient  => $nick,
+        message    => $message,
+    });
+
+    $self->bot_says($channel, 'Which tweet?');
+    for ( 1..@$recent ) {
+        $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]->text, $self->truncate_to));
+    }
+};
+
+sub handle_reply {
+    my ($self, $channel, $index) = @_;
+
+    my @candidates = @{$self->stash->{candidates} || []};
+    if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
+        my $message = sprintf '@%s %s', @{$self->stash}{qw/recipient message/};
+        if ( (my $n = length($message) - 140) > 0 ) {
+            $self->bot_says($channel, "Message not sent; $n characters too long. Limit is 140 characters.");
+        }
+        else {
+            $self->twitter(update => {
+                status => $message,
+                in_reply_to_status_id => $candidates[$index - 1],
+            });
+        }
         $self->clear_stash;
         return 1; # handled
     }
