@@ -470,6 +470,43 @@ sub sort_unique_statuses {
     ];
 }
 
+sub _net_twitter_opts {
+    my $self = shift;
+
+    my %defaults = (
+        useragent_class      => 'LWP::UserAgent::POE',
+        username             => $self->twitter_username,
+        password             => $self->twitter_password,
+        useragent            => "twirc/$VERSION",
+        source               => 'twircgw',
+        decode_html_entities => 1,
+    );
+
+    my %config = %{ $self->twitter_args };
+    foreach my $key ( keys %defaults ) {
+        $config{$key} = defined($config{$key}) ? 
+            $config{$key} : $defaults{$key}
+    }
+
+    my @traits = qw/API::REST InflateObjects/;
+    foreach my $plugin (@{$self->plugins}){
+        if ($plugin->can('plugin_traits')) {
+            push @traits, $plugin->plugin_traits();
+        }
+    }
+    if ($config{'traits'} && !ref($config{'traits'} eq 'ARRAY')) {
+        die qq[twitter_args traits MUST be an array]
+    }
+    elsif($config{'traits'}) {
+        push @{$config{'traits'}}, @traits;
+    }
+    else {
+        $config{'traits'} = \@traits;
+    }
+
+    return %config;
+}
+
 sub START {
     my ($self) = @_;
 
@@ -520,15 +557,9 @@ sub START {
     $self->yield('user_timeline'); # for topic setting
     $self->yield('poll_twitter');
 
+
     $self->_twitter(Net::Twitter->new(
-        traits               => [qw/API::REST InflateObjects/],
-        useragent_class      => 'LWP::UserAgent::POE',
-        username             => $self->twitter_username,
-        password             => $self->twitter_password,
-        useragent            => "twirc/$VERSION",
-        source               => 'twircgw',
-        decode_html_entities => 1,
-        %{ $self->twitter_args },
+        $self->_net_twitter_opts()
     ));
 
     if ( $self->state_file && -r $self->state_file ) {
