@@ -1318,10 +1318,16 @@ selection with I<count> (Defaults to 3.)
 event cmd_retweet => sub {
     my ( $self, $channel, $args ) = @_[OBJECT, ARG0, ARG1];
 
+    unless ( defined $args ) {
+        $self->bot_says($channel, 'usage: retweet nick [-N]');
+        return;
+    }
+
     my ( $nick, $count ) = split /\s+/, $args;
+
     $count ||= $self->favorites_count;
 
-    my $recent = $self->twitter(user_timeline => { id => $nick, count => $count }) || return;
+    my $recent = $self->twitter(user_timeline => { screen_name => $nick, count => $count }) || return;
     if ( @$recent == 0 ) {
         $self->bot_says($channel, "$nick has no recent tweets");
         return;
@@ -1362,15 +1368,26 @@ parameter is prefixed with a dash.
 event cmd_reply => sub {
     my ( $self, $channel, $args ) = @_[OBJECT, ARG0, ARG1];
 
+    unless ( defined $args ) {
+        $self->bot_says($channel, "usage: reply nick [-N] message-text");
+        return;
+    }
+
     my ( $nick, $count, $message ) = $args =~ /
-        ^@?(\w+)        # nick; strip leading @ if there is one
+        ^@?(\S+)        # nick; strip leading @ if there is one
         \s+
         (?:-(\d+)\s+)?  # optional count: -N
         (.*)            # the message
     /x;
+    unless ( defined $nick && defined $message ) {
+        $self->bot_says($channel, "usage: reply nick [-N] message-text");
+        return;
+    }
+
+
     $count ||= $self->favorites_count;
 
-    my $recent = $self->twitter(user_timeline => { id => $nick, count => $count }) || return;
+    my $recent = $self->twitter(user_timeline => { screen_name => $nick, count => $count }) || return;
     if ( @$recent == 0 ) {
         $self->bot_says($channel, "$nick has no recent tweets");
         return;
