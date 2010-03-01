@@ -78,13 +78,31 @@ has twitter_username    => ( isa => 'Str', is => 'ro', required => 1 );
 
 has twitter_password    => ( isa => 'Str', is => 'ro', required => 1 );
 
+=item oauth_access_token
+
+=cut
+
+has oauth_access_token => (
+    is => 'rw',
+    isa => 'Str',
+);
+
+=item oauth_access_token_secret
+
+=cut
+
+has oauth_access_token_secret => (
+    is => 'rw',
+    isa => 'Str',
+);
+
 =item twitter_screen_name
 
 (Required) The user's Twitter screen name.
 
 =cut
 
-has twitter_screen_name => ( isa => 'Str', is => 'ro', required => 1 );
+has twitter_screen_name => ( isa => 'Str', is => 'rw' );
 
 
 =item irc_server_name
@@ -475,11 +493,10 @@ sub _net_twitter_opts {
     my $self = shift;
 
     my %defaults = (
+        consumer_key         => 'agdvsZFSuZP0AqFJzOJtgA',
+        consumer_secret      => 'PQQN2cNvQpwo6fnkg0YYjrmPOI97ICLTNS0YZn0bU',
         useragent_class      => 'LWP::UserAgent::POE',
-        username             => $self->twitter_username,
-        password             => $self->twitter_password,
         useragent            => "twirc/$VERSION",
-        source               => 'twircgw',
         decode_html_entities => 1,
     );
 
@@ -489,7 +506,7 @@ sub _net_twitter_opts {
             $config{$key} : $defaults{$key}
     }
 
-    my @traits = qw/API::REST InflateObjects/;
+    my @traits = qw/API::REST OAuth InflateObjects/;
     foreach my $plugin (@{$self->plugins}){
         if ($plugin->can('plugin_traits')) {
             push @traits, $plugin->plugin_traits();
@@ -511,6 +528,10 @@ sub _net_twitter_opts {
 sub START {
     my ($self) = @_;
 
+    $self->_twitter(Net::Twitter->new(
+        $self->_net_twitter_opts()
+    ));
+    
     $self->ircd(
         POE::Component::Server::IRC->spawn(
             config => {
@@ -554,15 +575,6 @@ sub START {
         $logger->add_appender($appender);
     }
 
-    $self->yield('friends');
-    $self->yield('user_timeline'); # for topic setting
-    $self->yield('poll_twitter');
-
-
-    $self->_twitter(Net::Twitter->new(
-        $self->_net_twitter_opts()
-    ));
-
     if ( $self->state_file && -r $self->state_file ) {
         eval {
             $self->state(POE::Component::Server::Twirc::State->load($self->state_file))
@@ -572,6 +584,8 @@ sub START {
             $self->log->error($@);
         }
     }
+
+    $self->yield('xauth');
 
     return $self;
 }
@@ -583,6 +597,24 @@ event _child => sub {
 
     $self->log->debug("[_child] $event $child");
     $kernel->detach_child($child) if $event eq 'create';
+};
+
+event xauth => sub {
+    my $self = shift;
+
+    my $nt = $self->_twitter;
+    unless ( $nt->authorized ) {
+        my ($token, $secret, $user_id, $screen_name)
+            = $nt->xauth($self->twitter_username, $self->twitter_password);
+        $DB::single = 1;
+        $nt->access_token($token);
+        $nt->access_token_secret($secret);
+        $self->twitter_screen_name($screen_name);
+    }
+
+    $self->yield('friends');
+    $self->yield('user_timeline'); # for topic setting
+    $self->yield('poll_twitter');
 };
 
 event poco_shutdown => sub {
@@ -786,6 +818,7 @@ event display_statuses => sub {
 event friends => sub {
     my ($self, $cursor ) = @_[OBJECT, ARG0];
 
+    $DB::single = 1;
     my $retry = $self->twitter_retry_on_error;
 
     $self->log->debug("[twitter:friends] calling...");
