@@ -10,6 +10,7 @@ use String::Truncate qw/elide/;
 use POE::Component::Server::Twirc::LogAppender;
 use POE::Component::Server::Twirc::State;
 use Encode qw/decode/;
+use Try::Tiny;
 
 with 'MooseX::Log::Log4perl';
 
@@ -774,8 +775,10 @@ event display_statuses => sub {
     while ( my $entry = shift @{$self->tweet_stack} ) {
         my $name = $entry->user->screen_name;
         $name = $self->twitter_alias if $name eq $self->irc_nickname;
+        my $text = try { "RT \@${ \$entry->retweeted_status->user->screen_name }: ${ \$entry->retweeted_status->text }" }
+                || $entry->text;
         $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_)
-            for split /[\r\n]+/, $entry->text;
+            for split /[\r\n]+/, $text;
     }
 };
 
@@ -970,7 +973,7 @@ event user_timeline => sub {
     $self->log->debug("[user_timetline] calling...");
     # Work around a twitter api bug by passing id; without it, sometimes the wrong users statuses
     # are returned.
-    my $statuses = $self->twitter(user_timeline => { id =>  $self->twitter_screen_name });
+    my $statuses = $self->twitter(user_timeline => { screen_name =>  $self->twitter_screen_name });
     unless ( $statuses ) {
         $_[KERNEL]->delay(user_timeline => 60);
     }
@@ -1203,7 +1206,7 @@ event cmd_favorite => sub {
 
     $self->log->debug("[cmd_favorite] $nick");
 
-    my $recent = $self->twitter(user_timeline => { id => $nick, count => $count }) || return;
+    my $recent = $self->twitter(user_timeline => { screen_name => $nick, count => $count }) || return;
     if ( @$recent == 0 ) {
         $self->bot_says($channel, "$nick has no recent tweets");
         return;
