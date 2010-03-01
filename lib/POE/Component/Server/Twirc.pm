@@ -1512,6 +1512,10 @@ L<App::Twirc>
 
 Marc Mims <marc@questright.com>
 
+=head1 CONTRIBUTORS
+
+Adam Prime <adam.prime@utoronto.ca> (@adamprime)
+
 =head1 LICENSE
 
 Copyright (c) 2008 Marc Mims

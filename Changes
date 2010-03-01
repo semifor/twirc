@@ -1,3 +1,12 @@
+    - Show full text of retweeted messages
+    - usage messages for retry/retweet commands
+    - Added search plugin (Adam Prime)
+    - Let plugins specify traits for Net::Twitter (Adam Prime)
+    - Added reply command (sets in_relpy_to_status_id)
+    - Use home_timeline instead of friends_timeline
+    - Added retweet command for official Twitter retweets
+    - Added report_spam command
+
 0.10 2009-11-02
     - Replaced Text::Truncate with String::Truncate
 
