@@ -202,6 +202,17 @@ has twitter_alias       => ( isa => 'Str', is => 'ro', default => 'me' );
 
 has twitter_args => ( isa => 'HashRef', is => 'ro', default => sub { {} } );
 
+=item extra_net_twitter_traits
+
+(Optional) Additional traits used to construct the Net::Twitter instance.
+
+=cut
+
+has extra_net_twitter_traits => (
+    is      => 'ro',
+    default => sub { [] },
+);
+
 =item echo_posts
 
 (Optional) If false, posts sent by L<POE::Component::Server::Twirc> will not be redisplayed when received
@@ -474,36 +485,27 @@ sub sort_unique_statuses {
 sub _net_twitter_opts {
     my $self = shift;
 
-    my %defaults = (
+    my %config = (
+        traits               => [qw/API::REST InflateObjects/],
         useragent_class      => 'LWP::UserAgent::POE',
         username             => $self->twitter_username,
         password             => $self->twitter_password,
         useragent            => "twirc/$VERSION",
         source               => 'twircgw',
         decode_html_entities => 1,
+        %{ $self->twitter_args },
     );
 
-    my %config = %{ $self->twitter_args };
-    foreach my $key ( keys %defaults ) {
-        $config{$key} = defined($config{$key}) ? 
-            $config{$key} : $defaults{$key}
-    }
-
-    my @traits = qw/API::REST InflateObjects/;
     foreach my $plugin (@{$self->plugins}){
         if ($plugin->can('plugin_traits')) {
-            push @traits, $plugin->plugin_traits();
+            push @{ $config{traits} }, $plugin->plugin_traits();
         }
     }
-    if ($config{'traits'} && !ref($config{'traits'} eq 'ARRAY')) {
-        die qq[twitter_args traits MUST be an array]
-    }
-    elsif($config{'traits'}) {
-        push @{$config{'traits'}}, @traits;
-    }
-    else {
-        $config{'traits'} = \@traits;
-    }
+
+    my %unique_traits = map { $_ => undef }
+        @{ $config{traits} },
+        @{ $self->extra_net_twitter_traits };
+    $config{traits} = [ keys %unique_traits ];
 
     return %config;
 }
@@ -1213,7 +1215,7 @@ event cmd_favorite => sub {
     }
 
     $self->stash({
-        handler    => 'handle_favorite',
+        handler    => '_handle_favorite',
         candidates => [ map $_->id, @$recent ],
     });
 
@@ -1223,7 +1225,7 @@ event cmd_favorite => sub {
     }
 };
 
-sub handle_favorite {
+sub _handle_favorite {
     my ($self, $channel, $index) = @_;
 
     $self->log->debug("[handle_favorite] $index");
@@ -1337,7 +1339,7 @@ event cmd_retweet => sub {
     }
 
     $self->stash({
-        handler    => 'handle_retweet',
+        handler    => '_handle_retweet',
         candidates => [ map $_->id, @$recent ],
     });
 
@@ -1347,7 +1349,7 @@ event cmd_retweet => sub {
     }
 };
 
-sub handle_retweet {
+sub _handle_retweet {
     my ($self, $channel, $index) = @_;
 
     my @candidates = @{$self->stash->{candidates} || []};
@@ -1397,7 +1399,7 @@ event cmd_reply => sub {
     }
 
     $self->stash({
-        handler    => 'handle_reply',
+        handler    => '_handle_reply',
         candidates => [ map $_->id, @$recent ],
         recipient  => $nick,
         message    => $message,
@@ -1409,7 +1411,7 @@ event cmd_reply => sub {
     }
 };
 
-sub handle_reply {
+sub _handle_reply {
     my ($self, $channel, $index) = @_;
 
     my @candidates = @{$self->stash->{candidates} || []};
