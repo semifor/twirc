@@ -40,6 +40,8 @@ irc
 irssi
 plugins
 redisplaying
+retweet
+spammers
 timeline
 timelines
 twirc
