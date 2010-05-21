@@ -8,6 +8,8 @@ has friends_timeline_id => ( isa => 'Int', is => 'rw' );
 has user_timeline_id    => ( isa => 'Int', is => 'rw' );
 has reply_id            => ( isa => 'Int', is => 'rw' );
 has direct_message_id   => ( isa => 'Int', is => 'rw' );
+has access_token        => ( isa => 'Str', is => 'rw' );
+has access_token_secret => ( isa => 'Str', is => 'rw' );
 
 no Moose;
 
