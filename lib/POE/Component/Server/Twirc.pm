@@ -486,8 +486,14 @@ sub _net_twitter_opts {
     my $self = shift;
 
     my %config = (
-        consumer_key         => 'agdvsZFSuZP0AqFJzOJtgA',
-        consumer_secret      => 'PQQN2cNvQpwo6fnkg0YYjrmPOI97ICLTNS0YZn0bU',
+        # ROT13: Gjvggre qbrf abg jnag pbafhzre xrl/frperg vapyhqrq va bcra
+        # fbhepr nccf. Gurl frrz gb guvax cebcevrgnel pbqr vf fnsre orpnhfr
+        # gur pbafhzre perqragvnyf ner boshfpngrq.  Fb, jr'yy boshfpngr gurz
+        # urer jvgu ebg13 naq jr'yy or "frpher" whfg yvxr n cebcevrgnel ncc.
+        ( grep tr/a-zA-Z/n-za-mN-ZA-M/, map $_,
+            pbafhzre_xrl     => 'ntqifMSFhMC0NdSWmBWgtN',
+            pbafhzre_frperg  => 'CDDA2pAiDcjb6saxt0LLwezCBV97VPYGAF0LMa0oH',
+        ),
         traits               => [qw/API::REST OAuth InflateObjects/],
         useragent_class      => 'LWP::UserAgent::POE',
         useragent            => "twirc/$VERSION",
