@@ -14,7 +14,7 @@ use Try::Tiny;
 
 with 'MooseX::Log::Log4perl';
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 =head1 NAME
 
