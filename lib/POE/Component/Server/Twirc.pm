@@ -11,6 +11,7 @@ use POE::Component::Server::Twirc::LogAppender;
 use POE::Component::Server::Twirc::State;
 use Encode qw/decode/;
 use Try::Tiny;
+use Scalar::Util qw/reftype/;
 
 with 'MooseX::Log::Log4perl';
 
@@ -396,6 +397,12 @@ sub twitter {
             $@ = 'Fail Whale';
         }
         $self->twitter_error("$method -> $@");
+    }
+
+    # On 13-Aug-2008, twitter introduced a new bug: user_timeline can receieve undef and plain
+    # strings (just the status text) in the results.  Filter the bogus results out.
+    if ( $r && $method eq 'user_timeline' ) {
+        $r = [ grep reftype $_ && reftype $_ eq 'HASH' && exists $_->{text}, @$r ];
     }
 
     return $r;
