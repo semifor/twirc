@@ -384,7 +384,7 @@ has _state => (
 sub _build_state { POE::Component::Server::Twirc::State->new }
 
 has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
-has _topic_id     => ( isa => 'Int', is => 'rw', default => 0 );
+has _topic_id     => ( isa => 'Str', is => 'rw', default => 0 );
 
 has client_encoding => ( isa => 'Str', is  => 'rw', default => sub { 'utf-8' } );
 
