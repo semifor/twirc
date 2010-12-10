@@ -15,7 +15,7 @@ use Scalar::Util qw/reftype/;
 
 with 'MooseX::Log::Log4perl';
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 =head1 NAME
 
@@ -432,14 +432,26 @@ sub twitter_error {
     $self->bot_notice($self->irc_channel, "Twitter error: $text");
 };
 
+my $zero_id = "0" x 19;
+sub id_gt { id_cmp(@_) > 0 }
+sub id_le { id_cmp(@_) <= 0 }
+
+sub id_cmp {
+    # Twitter now uses 64 bit ints for status IDs, so we use id_str to avoid trouble on
+    # 32-bit platforms.  So we do string comparison on IDs after zero padding them to their
+    # maximum length.
+    my ( $a, $b ) = map substr($zero_id . $_, -19), @_;
+    $a cmp $b;
+}
+
 # set topic from status, iff newest status
 sub set_topic {
     my ($self, $status) = @_;
 
     # only set the topic if it's newer than the last topic
-    return unless $status->id > $self->_topic_id;
+    return unless id_gt($status->id_str, $self->_topic_id);
 
-    $self->_topic_id($status->id);
+    $self->_topic_id($status->id_str);
     $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel, $status->text);
 };
 
@@ -472,10 +484,10 @@ sub get_statuses {
 
     my $since_id = $self->state->$state_id_name || 1;
     my $statuses = $self->twitter($twitter_method, { since_id => $since_id }) || [];
-    $self->state->$state_id_name($statuses->[0]->id) if @$statuses;
+    $self->state->$state_id_name($statuses->[0]->id_str) if @$statuses;
 
     # work around a twitter bug where since_id is sometimes ignored
-    return [ grep { $_->id > $since_id } @$statuses ];
+    return [ grep { id_gt($_->id_str,$since_id) } @$statuses ];
 }
 
 sub sort_unique_statuses {
@@ -483,8 +495,8 @@ sub sort_unique_statuses {
 
     my %seen;
     my $statuses = [
-        grep { !$seen{$_->id}++ }
-        sort { $a->id <=> $b->id }
+        grep { !$seen{$_->id_str}++ }
+        sort { id_cmp($a->id_str, $b->id_str) }
         map { @$_ } @_
     ];
 }
@@ -949,12 +961,12 @@ event timeline => sub {
 
         # message from self
         if ( $name eq $self->twitter_screen_name ) {
-            $self->state->user_timeline_id($status->id)
-                if $status->id > $self->state->user_timeline_id; # lack of faith in twitterapi
+            $self->state->user_timeline_id($status->id_str)
+                if id_gt($status->id_str, $self->state->user_timeline_id); # lack of faith in twitterapi
             $new_topic = $status unless $status->text =~ /^\s*\@/;
 
             # if we posted this status from twirc, we've already seen it
-            my $seen = delete $self->_unread_posts->{$status->id};
+            my $seen = delete $self->_unread_posts->{$status->id_str};
             next if $seen && !$self->echo_posts;
         }
 
@@ -1002,7 +1014,7 @@ event poll_cleanup => sub {
     # has been sent *during* processing of the most recent poll results.  However, we
     # should never have an _uread post older than friends_timeline_id.
     for my $id ( keys %{$self->_unread_posts} ) {
-        if ( $id <= $self->state->friends_timeline_id ) {
+        if ( id_le($id, $self->state->friends_timeline_id) ) {
             $self->log->error("recent post missing from the feed: $id");
             delete $self->_unread_posts->{$id};
         }
@@ -1072,7 +1084,7 @@ event cmd_post => sub {
     $self->log->debug("    update returned $status");
 
     $self->set_topic($status) unless $status->text =~ /^\s*\@/;
-    $self->_unread_posts->{$status->id} = 1;
+    $self->_unread_posts->{$status->id_str} = 1;
 };
 
 =item follow I<id>
@@ -1256,7 +1268,7 @@ event cmd_favorite => sub {
 
     $self->stash({
         handler    => '_handle_favorite',
-        candidates => [ map $_->id, @$recent ],
+        candidates => [ map $_->id_str, @$recent ],
     });
 
     $self->bot_says($channel, 'Which tweet?');
@@ -1380,7 +1392,7 @@ event cmd_retweet => sub {
 
     $self->stash({
         handler    => '_handle_retweet',
-        candidates => [ map $_->id, @$recent ],
+        candidates => [ map $_->id_str, @$recent ],
     });
 
     $self->bot_says($channel, 'Which tweet?');
@@ -1440,7 +1452,7 @@ event cmd_reply => sub {
 
     $self->stash({
         handler    => '_handle_reply',
-        candidates => [ map $_->id, @$recent ],
+        candidates => [ map $_->id_str, @$recent ],
         recipient  => $nick,
         message    => $message,
     });
