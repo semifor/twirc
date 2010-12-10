@@ -111,7 +111,7 @@ has irc_server_port     => ( isa => 'Int', is => 'ro', default => 6667 );
 =cut
 
 # will be defaulted to INADDR_ANY by POE::Wheel::SocketFactory
-has irc_server_bindaddr => ( isa => 'Str', is => 'ro', default => undef );
+has irc_server_bindaddr => ( isa => 'Str', is => 'ro', default => '' );
 
 =item irc_mask
 
