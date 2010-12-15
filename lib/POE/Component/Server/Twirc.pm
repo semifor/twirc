@@ -1401,6 +1401,14 @@ event cmd_retweet => sub {
     }
 };
 
+=item rt I<screen_name> [I<count>]
+
+An alias for the C<retweet> command.
+
+=cut
+
+event cmd_rt => sub { shift->cmd_retweet(@_) };
+
 sub _handle_retweet {
     my ($self, $channel, $index) = @_;
 

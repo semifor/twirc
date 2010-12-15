@@ -1,3 +1,8 @@
+0.13 2010-12-10
+    - added command `rt` alias for `retweet`
+    - treat Twitter status IDs as strings (they now exceed Int capacity on 32-bit systems)
+    - fixed: irc_server_bindaddr type constraint
+    - updated dependencies
     - filter bogus results from user_timeline (twitter bug)
 
 0.12 2010-08-23
