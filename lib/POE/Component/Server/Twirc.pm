@@ -657,6 +657,10 @@ event poco_shutdown => sub {
             $self->log->error($_);
         };
     }
+
+    # TODO: Why does twirc often fail to shut down?
+    # This is surely the WRONG thing to do, but hit the big red kill switch.
+    exit 0;
 };
 
 ########################################################################
