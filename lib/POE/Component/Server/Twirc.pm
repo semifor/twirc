@@ -391,13 +391,14 @@ has client_encoding => ( isa => 'Str', is  => 'rw', default => sub { 'utf-8' } )
 sub twitter {
     my ($self, $method, @args) = @_;
 
-    my $r = eval { $self->_twitter->$method(@args) };
-    if ( $@ ) {
-        if ( blessed $@ && $@->can('code') && $@->code == 502 ) {
+    my $r = try { $self->_twitter->$method(@args) }
+    catch {
+        if ( blessed $_ && $_->can('code') && $_->code == 502 ) {
             $@ = 'Fail Whale';
         }
         $self->twitter_error("$method -> $@");
-    }
+        undef;
+    };
 
     # On 13-Aug-2008, twitter introduced a new bug: user_timeline can receieve undef and plain
     # strings (just the status text) in the results.  Filter the bogus results out.
@@ -581,26 +582,23 @@ sub START {
     }
 
     if ( $self->state_file && -r $self->state_file ) {
-        eval {
+        try {
             $self->state(POE::Component::Server::Twirc::State->load($self->state_file))
-        };
-        if ( $@ ) {
-            $@ =~ s/ at .*//s;
-            $self->log->error($@);
         }
+        catch {
+            s/ at .*//s;
+            $self->log->error($_);
+        };
     }
+
+    $self->state->access_token && $self->state->access_token_secret || $self->xauth;
 
     $self->_twitter(Net::Twitter->new(
         $self->_net_twitter_opts()
     ));
 
-    if ( $self->state->access_token && $self->state->access_token_secret ) {
-        $self->_twitter->access_token($self->state->access_token);
-        $self->_twitter->access_token_secret($self->state->access_token_secret);
-    }
-    else {
-        $self->yield('xauth');
-    }
+    $self->_twitter->access_token($self->state->access_token);
+    $self->_twitter->access_token_secret($self->state->access_token_secret);
 
     $self->yield('friends');
     $self->yield('user_timeline'); # for topic setting
@@ -618,7 +616,7 @@ event _child => sub {
     $kernel->detach_child($child) if $event eq 'create';
 };
 
-event xauth => sub {
+sub xauth {
     my $self = shift;
 
     # LWP::UserAgent::POE doesn't handle SSL, so we need a blocking UA
@@ -627,16 +625,22 @@ event xauth => sub {
         useragent_class => 'LWP::UserAgent',
     );
 
-    my ($token, $secret, $user_id, $screen_name)
-        = $nt->xauth($self->twitter_username, $self->twitter_password);
+    my ($token, $secret, $user_id, $screen_name) = try {
+        $nt->xauth($self->twitter_username, $self->twitter_password);
+    }
+    catch {
+        if ( /401 Unauthorize/ ) {
+            die "Twitter login failed. Check your username and passord.\n";
+        }
 
-    $self->_twitter->access_token($token);
-    $self->_twitter->access_token_secret($secret);
+        die "Twitter login failed: $_\n";
+    };
+
     $self->twitter_screen_name($screen_name);
 
     $self->state->access_token($token);
     $self->state->access_token_secret($secret);
-    eval { $self->state->store($self->state_file) };
+    try { $self->state->store($self->state_file) };
 };
 
 event poco_shutdown => sub {
@@ -647,11 +651,11 @@ event poco_shutdown => sub {
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
     if ( $self->state_file ) {
-        eval { $self->state->store($self->state_file) };
-        if ( $@ ) {
-            $@ =~ s/ at .*//s;
-            $self->log->error($@);
-        }
+        try { $self->state->store($self->state_file) }
+        catch {
+            s/ at .*//s;
+            $self->log->error($_);
+        };
     }
 };
 
@@ -1003,11 +1007,11 @@ event poll_cleanup => sub {
 
     # store state
     if ( $self->state_file ) {
-        eval { $self->state->store($self->state_file) };
-        if ( $@ ) {
-            $@ =~ s/ at .*//s;
-            $self->log->error($@);
-        }
+        try { $self->state->store($self->state_file) }
+        catch {
+            s/ at .*//s;
+            $self->log->error($_);
+        };
     }
 
     # It is possible to get here with _unread_posts populated, for instance, if a post
