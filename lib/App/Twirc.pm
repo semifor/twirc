@@ -40,6 +40,7 @@ sub run {
 
     if ( $self->background ) {
         Proc::Daemon::Init;
+        POE::Kernel->has_forked;
     }
     else {
         eval 'use POE qw(Component::TSTP)';
