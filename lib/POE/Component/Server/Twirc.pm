@@ -1039,7 +1039,7 @@ event user_timeline => sub {
     unless ( $statuses ) {
         $_[KERNEL]->delay(user_timeline => 60);
     }
-    $self->log->debug("    urser_timeline returned");
+    $self->log->debug("    user_timeline returned");
 
     return unless @$statuses;
 
