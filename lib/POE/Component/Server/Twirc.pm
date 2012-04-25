@@ -395,31 +395,6 @@ sub delete_user {
     $self->delete_user_by_nick($user->{screen_name});
 }
 
-sub get_replies          { shift->get_statuses(replies       => 'reply_id'            ) }
-sub get_friends_timeline { shift->get_statuses(home_timeline => 'friends_timeline_id' ) }
-
-sub get_statuses {
-    my ($self, $twitter_method, $state_id_name) = @_;
-
-    my $since_id = $self->state->$state_id_name || 1;
-    my $statuses = $self->twitter($twitter_method, { since_id => $since_id }) || [];
-    $self->state->$state_id_name($statuses->[0]{id_str}) if @$statuses;
-
-    # work around a twitter bug where since_id is sometimes ignored
-    return [ grep { id_gt($$_{id_str}, $since_id) } @$statuses ];
-}
-
-sub sort_unique_statuses {
-    my $self = shift;
-
-    my %seen;
-    my $statuses = [
-        grep { !$seen{$_->id_str}++ }
-        sort { id_cmp($$a{id_str}, $$b{id_str}) }
-        map { @$_ } @_
-    ];
-}
-
 sub _twitter_auth {
     # ROT13: Gjvggre qbrf abg jnag pbafhzre xrl/frperg vapyhqrq va bcra
     # fbhepr nccf. Gurl frrz gb guvax cebcevrgnel pbqr vf fnsre orpnhfr
@@ -938,58 +913,6 @@ event display_direct_messages => sub {
     }
 };
 
-event timeline => sub {
-    my ($self) = @_;
-
-    my $new_topic;
-    my $channel = $self->irc_channel;
-    my $statuses = $self->sort_unique_statuses(
-        $self->check_friends_timeline && $self->get_friends_timeline || [],
-        $self->check_replies          && $self->get_replies          || [],
-    );
-
-    while ( my $status = shift @$statuses ) {
-        my $id      = $status->{user}{id};
-        my $name    = $status->{user}{screen_name};
-        my $ircname = $status->{user}{name};
-
-        # alias our twitter_name if configured
-        # (to avoid a collision in case our twitter screen name and irc nick are the same)
-        $self->log->debug( sprintf '    $name = %s, $twitter_name = %s', $ircname, $name);
-
-        # message from self
-        if ( $name eq $self->twitter_screen_name ) {
-            $self->state->user_timeline_id($$status{id_str})
-                if id_gt($$status{id_str}, $self->state->user_timeline_id); # lack of faith in twitterapi
-            $new_topic = $status unless $$status{text} =~ /^\s*\@/;
-
-            # if we posted this status from twirc, we've already seen it
-            my $seen = delete $self->_unread_posts->{$$status{id_str}};
-            next if $seen && !$self->echo_posts;
-        }
-
-        my $user = $self->get_user_by_id($id);
-        if ( !$user ) {
-            # new user
-            $self->post_ircd(add_spoofed_nick => { nick => $name, ircname => $ircname });
-            $self->post_ircd(daemon_cmd_join => $name, $channel);
-        }
-        elsif ( $$user{screen_name} ne $name ) {
-            # nick change
-            $self->delete_user_by_nick($$user{id});
-            $self->post_ircd(daemon_cmd_nick => $$user{screen_name}, $name);
-        }
-
-        $self->add_user($$status{user});
-
-        $self->log->debug("    { $name, $$status{text} }");
-        push @{ $self->tweet_stack }, $status;
-    }
-
-    $self->set_topic($new_topic) if $new_topic;
-    $self->yield('poll_cleanup');
-};
-
 ########################################################################
 # Commands
 ########################################################################
@@ -1022,7 +945,7 @@ event cmd_post => sub {
         return;
     }
 
-    $self->twitter(update => $text) || return;
+    my $status = $self->twitter(update => $text) || return;
 
     $self->log->debug("    update returned $status");
 };
