@@ -13,6 +13,7 @@ requires 'Config::Any';
 requires 'Email::Valid'                => 0;
 requires 'Encode';
 requires 'FindBin';
+requires 'HTML::Entities';
 requires 'Log::Log4perl';
 requires 'LWP::UserAgent::POE'         => '0.02';
 requires 'Moose';

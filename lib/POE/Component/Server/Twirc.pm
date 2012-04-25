@@ -13,6 +13,7 @@ use Encode qw/decode/;
 use Try::Tiny;
 use Scalar::Util qw/reftype/;
 use AnyEvent::Twitter::Stream;
+use HTML::Entities;
 
 with 'MooseX::Log::Log4perl';
 
@@ -849,14 +850,28 @@ event get_followers_ids => sub {
     }
 };
 
-event display_status => sub {
-    my ( $self, $entry ) = @_[OBJECT, ARG0];
+sub formatted_status_text {
+    my ( $self, $status ) = @_;
 
-    my $name = $entry->{user}{screen_name};
+    my $text = $$status{text};
+    for my $e ( reverse @{$$status{entities}{urls}} ) {
+        my ($start, $end) = @{$$e{indices}};
+        substr $text, $start, $end - $start, "[$$e{display_url}]($$e{url})";
+    }
+
+    return decode_entities($text);
+}
+
+event display_status => sub {
+    my ( $self, $status ) = @_[OBJECT, ARG0];
+
+    my $name = $$status{user}{screen_name};
     $name = $self->twitter_alias if $name eq $self->irc_nickname;
-    my $text = $entry->{retweeted_status}
-             ? "RT \@$entry->{retweeted_status}{user}{screen_name}: $entry->{retweeted_status}{text}"
-             : $entry->{text};
+
+    my $text = $$status{retweeted_status}
+             ? "RT \@$$status{retweeted_status}{user}{screen_name}: "
+               . $self->formatted_status_text($$status{retweeted_status})
+             : $self->formatted_status_text($status);
 
     $self->log->debug("display_status: <$name> $text");
     $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_) for split /[\r\n]+/, $text;
