@@ -23,6 +23,8 @@ has background => (
     is          => 'ro',
 );
 
+has authenticate => metaclass => 'Getopt', cmd_aliases => [qw/a auth/], isa => 'Bool', is => 'ro', default => 0;
+
 sub run {
     my $self = shift;
 
@@ -37,6 +39,27 @@ sub run {
     # Hack! Make sure state_file is absolute before we background (which does a cd /).
     $config->{state_file} = Path::Class::File->new($config->{state_file})->absolute->stringify
         if $config->{state_file};
+
+    if ( $self->authenticate ) {
+        # blood hack until Twitter restores xauth
+        die "state file required" unless $config->{state_file};
+
+        my $state = POE::Component::Server::Twirc::State->load($config->{state_file});
+
+        my $nt = Net::Twitter->new(traits => [qw/OAuth/], POE::Component::Server::Twirc->_twitter_auth);
+        print "Authorize twirc at ", $nt->get_authorization_url, "\nThen, enter the PIN# provided: ";
+
+        my $pin = <STDIN>;
+        chomp $pin;
+
+        my ( $token, $secret ) = $nt->request_access_token(verifier => $pin);
+        $state->access_token($token);
+        $state->access_token_secret($secret);
+
+        $state->store($config->{state_file});
+
+        return;
+    }
 
     if ( $self->background ) {
         Proc::Daemon::Init;
