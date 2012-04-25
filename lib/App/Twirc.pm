@@ -44,7 +44,9 @@ sub run {
         # blood hack until Twitter restores xauth
         die "state file required" unless $config->{state_file};
 
-        my $state = POE::Component::Server::Twirc::State->load($config->{state_file});
+        my $state = -r $config->{state_file}
+                  ? POE::Component::Server::Twirc::State->load($config->{state_file})
+                  : POE::Component::Server::Twirc::State->new;
 
         my $nt = Net::Twitter->new(traits => [qw/OAuth/], POE::Component::Server::Twirc->_twitter_auth);
         print "Authorize twirc at ", $nt->get_authorization_url, "\nThen, enter the PIN# provided: ";
