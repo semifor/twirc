@@ -312,7 +312,6 @@ has _state => (
 sub _build_state { POE::Component::Server::Twirc::State->new }
 
 has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
-has _topic_id     => ( isa => 'Str', is => 'rw', default => 0 );
 
 has client_encoding => ( isa => 'Str', is  => 'rw', default => sub { 'utf-8' } );
 
@@ -370,13 +369,9 @@ sub id_cmp {
 
 # set topic from status, iff newest status
 sub set_topic {
-    my ($self, $status) = @_;
+    my ($self, $text) = @_;
 
-    # only set the topic if it's newer than the last topic
-    return unless id_gt($status->{id_str}, $self->_topic_id);
-
-    $self->_topic_id($status->id_str);
-    $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel, $status->text);
+    $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel, $text);
 };
 
 # match any nick
@@ -561,6 +556,8 @@ sub START {
     POE::Kernel->sig(TERM => 'poco_shutdown');
     POE::Kernel->sig(INT  => 'poco_shutdown');
 
+    $self->yield('get_topic');
+
     return $self;
 }
 
@@ -619,6 +616,17 @@ event poco_shutdown => sub {
     # TODO: Why does twirc often fail to shut down?
     # This is surely the WRONG thing to do, but hit the big red kill switch.
     exit 0;
+};
+
+event get_topic => sub {
+    my $self = $_[OBJECT];
+
+    if ( my $r = $self->twitter('verify_credentials',{ include_entities => 1 }) ) {
+        if ( my $status = delete $$r{status} ) {
+            $$status{user} = $r;
+            $self->set_topic($self->formatted_status_text($status));
+        }
+    }
 };
 
 ########################################################################
@@ -773,10 +781,6 @@ event ircd_daemon_privmsg => sub {
     }
 };
 
-########################################################################
-# Twitter events
-########################################################################
-
 sub stale_after () { 7*24*3600 } # 1 week
 sub is_stale {
     my ( $self, $user ) = @_;
@@ -809,28 +813,6 @@ event lookup_friends => sub {
     $self->state->store($self->state_file);
 };
 
-event friends_ids => sub {
-    my ( $self, $friends_ids ) = @_[OBJECT, ARG0];
-
-    my $buffer = [];
-    for my $id ( @$friends_ids ) {
-        my $friend = $self->state->friends->{$id};
-        if ( !$friend || $self->is_stale($friend) ) {
-            push @$buffer, $id;
-            if ( @$buffer == 100 ) {
-                $self->yield(lookup_friends => $buffer);
-                $buffer = [];
-            }
-        }
-        else {
-            $self->yield(friend_join => $friend);
-        }
-    }
-
-    $self->yield(lookup_friends => $buffer);
-    $self->yield('get_followers_ids');
-};
-
 event get_followers_ids => sub {
     my ( $self ) = $_[OBJECT];
 
@@ -853,25 +835,56 @@ event get_followers_ids => sub {
 sub formatted_status_text {
     my ( $self, $status ) = @_;
 
-    my $text = $$status{text};
-    for my $e ( reverse @{$$status{entities}{urls}} ) {
+    my $is_retweet = !!$$status{retweeted_status};
+    my $s = $$status{retweeted_status} || $status;
+    my $text = $$s{text};
+    for my $e ( reverse @{$$s{entities}{urls} || []} ) {
         my ($start, $end) = @{$$e{indices}};
         substr $text, $start, $end - $start, "[$$e{display_url}]($$e{url})";
     }
 
-    return decode_entities($text);
+    decode_entities($text);
+
+    $text = "RT \@$$s{user}{screen_name}: $text" if $is_retweet;
+
+    return $text;
 }
+
+########################################################################
+# Twitter events
+########################################################################
+
+event friends_ids => sub {
+    my ( $self, $friends_ids ) = @_[OBJECT, ARG0];
+
+    my $buffer = [];
+    for my $id ( @$friends_ids ) {
+        my $friend = $self->state->friends->{$id};
+        if ( !$friend || $self->is_stale($friend) ) {
+            push @$buffer, $id;
+            if ( @$buffer == 100 ) {
+                $self->yield(lookup_friends => $buffer);
+                $buffer = [];
+            }
+        }
+        else {
+            $self->yield(friend_join => $friend);
+        }
+    }
+
+    $self->yield(lookup_friends => $buffer);
+    $self->yield('get_followers_ids');
+};
 
 event display_status => sub {
     my ( $self, $status ) = @_[OBJECT, ARG0];
 
+    my $text = $self->formatted_status_text($status);
     my $name = $$status{user}{screen_name};
-    $name = $self->twitter_alias if $name eq $self->irc_nickname;
-
-    my $text = $$status{retweeted_status}
-             ? "RT \@$$status{retweeted_status}{user}{screen_name}: "
-               . $self->formatted_status_text($$status{retweeted_status})
-             : $self->formatted_status_text($status);
+    if ( $name eq $self->irc_nickname ) {
+        $name = $self->twitter_alias;
+        $self->set_topic($text);
+    }
 
     $self->log->debug("display_status: <$name> $text");
     $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_) for split /[\r\n]+/, $text;
@@ -1009,12 +1022,9 @@ event cmd_post => sub {
         return;
     }
 
-    my $status = $self->twitter(update => $text) || return;
+    $self->twitter(update => $text) || return;
 
     $self->log->debug("    update returned $status");
-
-    $self->set_topic($status) unless $status->{text} =~ /^\s*\@/;
-    $self->_unread_posts->{$$status{id_str}} = 1;
 };
 
 =item follow I<id>
