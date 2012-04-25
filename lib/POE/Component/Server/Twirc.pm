@@ -789,8 +789,6 @@ event friend_join => sub {
     $self->post_ircd(add_spoofed_nick => { nick => $friend->{screen_name}, ircname => $friend->{name} });
     $self->post_ircd(daemon_cmd_join => $friend->{screen_name}, $self->irc_channel);
     $self->add_user($friend);
-    $self->post_ircd(daemon_cmd_mode => $self->irc_botname, $self->irc_channel, '+v', $friend->{screen_name})
-        if $friend->{following};
 };
 
 event lookup_friends => sub {
@@ -829,6 +827,7 @@ event friends_ids => sub {
     }
 
     $self->yield(lookup_friends => $buffer);
+    $self->yield('get_followers_ids');
 };
 
 event get_followers_ids => sub {
