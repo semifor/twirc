@@ -358,7 +358,6 @@ sub twitter_error {
 
 my $zero_id = "0" x 19;
 sub id_gt { id_cmp(@_) > 0 }
-sub id_le { id_cmp(@_) <= 0 }
 
 sub id_cmp {
     # Twitter now uses 64 bit ints for status IDs, so we use id_str to avoid trouble on
@@ -373,7 +372,7 @@ sub set_topic {
     my ($self, $status) = @_;
 
     # only set the topic if it's newer than the last topic
-    return unless id_gt($status->id_str, $self->_topic_id);
+    return unless id_gt($status->{id_str}, $self->_topic_id);
 
     $self->_topic_id($status->id_str);
     $self->post_ircd(daemon_cmd_topic => $self->irc_botname, $self->irc_channel, $status->text);
@@ -408,10 +407,10 @@ sub get_statuses {
 
     my $since_id = $self->state->$state_id_name || 1;
     my $statuses = $self->twitter($twitter_method, { since_id => $since_id }) || [];
-    $self->state->$state_id_name($statuses->[0]->id_str) if @$statuses;
+    $self->state->$state_id_name($statuses->[0]{id_str}) if @$statuses;
 
     # work around a twitter bug where since_id is sometimes ignored
-    return [ grep { id_gt($_->id_str,$since_id) } @$statuses ];
+    return [ grep { id_gt($$_{id_str}, $since_id) } @$statuses ];
 }
 
 sub sort_unique_statuses {
@@ -420,7 +419,7 @@ sub sort_unique_statuses {
     my %seen;
     my $statuses = [
         grep { !$seen{$_->id_str}++ }
-        sort { id_cmp($a->id_str, $b->id_str) }
+        sort { id_cmp($$a{id_str}, $$b{id_str}) }
         map { @$_ } @_
     ];
 }
@@ -832,6 +831,25 @@ event friends_ids => sub {
     $self->yield(lookup_friends => $buffer);
 };
 
+event get_followers_ids => sub {
+    my ( $self ) = $_[OBJECT];
+
+    for ( my $cursor = -1; $cursor; ) {
+        if ( my $r = $self->twitter(followers_ids => { cursor => $cursor }) ) {
+            for my $id ( @{$$r{ids}} ) {
+                if ( my $friend = $self->get_user_by_id($id) ) {
+                    $self->post_ircd(daemon_cmd_mode => $self->irc_botname, $self->irc_channel, '+v',
+                        $friend->{screen_name});
+                }
+            }
+            $cursor = $$r{next_cursor};
+        }
+        else {
+            $cursor = 0;
+        }
+    }
+};
+
 event display_status => sub {
     my ( $self, $entry ) = @_[OBJECT, ARG0];
 
@@ -852,7 +870,7 @@ event direct_messages => sub {
     # i.e., no DM id in saved state, just set the high water mark and return.
     unless ( $self->state->direct_message_id ) {
         if ( my $high_water = $self->twitter('direct_messages') ) {
-            $self->state->direct_message_id(@$high_water ? $high_water->[0]->id : 1);
+            $self->state->direct_message_id(@$high_water ? $high_water->[0]{id} : 1);
         }
         return;
     }
@@ -861,19 +879,19 @@ event direct_messages => sub {
     my $messages = $self->twitter(direct_messages => { since_id => $since_id }) || return;
 
     if ( @$messages ) {
-        $self->state->direct_message_id($messages->[0]->id)
-            if $messages->[0]->id > $since_id; # lack of faith in twitterapi
+        $self->state->direct_message_id($messages->[0]{id})
+            if $messages->[0]{id} > $since_id; # lack of faith in twitterapi
 
         while ( my $msg = pop @$messages ) {
             # workarond twitter bug where since_id parameter is ignored:
-            next unless $msg->id > $since_id;
+            next unless $$msg{id} > $since_id;
 
-            my $nick = $msg->sender->screen_name;
+            my $nick = $msg->{sender}{screen_name};
             unless ( $self->get_user_by_nick($nick) ) {
                 $self->log->warn("Joining $nick from a direct message; expected $nick already joined.");
-                $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $msg->sender->name });
+                $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $msg->{sender}{name} });
                 $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
-                $self->add_user($msg->sender);
+                $self->add_user($$msg{sender});
             }
 
             push @{$self->dm_stack}, $msg;
@@ -886,10 +904,10 @@ event display_direct_messages => sub {
     my ($self) = @_;
 
     while ( my $msg = shift @{$self->dm_stack} ) {
-        my $name = $msg->sender_screen_name;
+        my $name = $$msg{sender_screen_name};
         $name = $self->twitter_alias if $name eq $self->irc_nickname;
         $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_nickname, $_)
-            for split /\r?\n/, $msg->text;
+            for split /\r?\n/, $$msg{text};
     }
 };
 
@@ -904,9 +922,9 @@ event timeline => sub {
     );
 
     while ( my $status = shift @$statuses ) {
-        my $id      = $status->user->id;
-        my $name    = $status->user->screen_name;
-        my $ircname = $status->user->name;
+        my $id      = $status->{user}{id};
+        my $name    = $status->{user}{screen_name};
+        my $ircname = $status->{user}{name};
 
         # alias our twitter_name if configured
         # (to avoid a collision in case our twitter screen name and irc nick are the same)
@@ -914,12 +932,12 @@ event timeline => sub {
 
         # message from self
         if ( $name eq $self->twitter_screen_name ) {
-            $self->state->user_timeline_id($status->id_str)
-                if id_gt($status->id_str, $self->state->user_timeline_id); # lack of faith in twitterapi
-            $new_topic = $status unless $status->text =~ /^\s*\@/;
+            $self->state->user_timeline_id($$status{id_str})
+                if id_gt($$status{id_str}, $self->state->user_timeline_id); # lack of faith in twitterapi
+            $new_topic = $status unless $$status{text} =~ /^\s*\@/;
 
             # if we posted this status from twirc, we've already seen it
-            my $seen = delete $self->_unread_posts->{$status->id_str};
+            my $seen = delete $self->_unread_posts->{$$status{id_str}};
             next if $seen && !$self->echo_posts;
         }
 
@@ -929,15 +947,15 @@ event timeline => sub {
             $self->post_ircd(add_spoofed_nick => { nick => $name, ircname => $ircname });
             $self->post_ircd(daemon_cmd_join => $name, $channel);
         }
-        elsif ( $user->screen_name ne $name ) {
+        elsif ( $$user{screen_name} ne $name ) {
             # nick change
-            $self->delete_user_by_nick($user->id);
-            $self->post_ircd(daemon_cmd_nick => $user->screen_name, $name);
+            $self->delete_user_by_nick($$user{id});
+            $self->post_ircd(daemon_cmd_nick => $$user{screen_name}, $name);
         }
 
-        $self->add_user($status->user);
+        $self->add_user($$status{user});
 
-        $self->log->debug("    { $name, $status->{text} }");
+        $self->log->debug("    { $name, $$status{text} }");
         push @{ $self->tweet_stack }, $status;
     }
 
@@ -981,8 +999,8 @@ event cmd_post => sub {
 
     $self->log->debug("    update returned $status");
 
-    $self->set_topic($status) unless $status->text =~ /^\s*\@/;
-    $self->_unread_posts->{$status->id_str} = 1;
+    $self->set_topic($status) unless $status->{text} =~ /^\s*\@/;
+    $self->_unread_posts->{$$status{id_str}} = 1;
 };
 
 =item follow I<id>
@@ -1001,8 +1019,8 @@ event cmd_follow => sub {
 
     my $friend = $self->twitter(create_friend => $id) || return;
 
-    my $nick = $friend->screen_name;
-    my $name = $friend->name;
+    my $nick = $$friend{screen_name};
+    my $name = $$friend{name};
     $self->post_ircd('add_spoofed_nick', { nick => $nick, ircname => $name });
     $self->post_ircd(daemon_cmd_join => $name, $self->irc_channel);
     $self->add_user($friend);
@@ -1031,7 +1049,7 @@ event cmd_unfollow => sub {
         return;
     }
 
-    my $friend = $self->twitter(destroy_friend => $id) || return;
+    $self->twitter(destroy_friend => $id) || return;
 
     $self->post_ircd(daemon_cmd_part => $id, $self->irc_channel);
     $self->post_ircd(del_spooked_nick => $id);
@@ -1103,14 +1121,10 @@ event cmd_whois => sub {
         $user = $self->twitter(show_user => $arg) || return;
     }
     if ( $user ) {
-        for (
-            sprintf('%s [%s]: %s, %s', @{$user}{qw/screen_name id name location/}),
-            $user->description,
-            $user->url,
-        )
-        {
-            $self->bot_says($channel, $_) if $_;
-        }
+        $self->bot_says(
+            $channel, 
+            sprintf('%s [%s]: %s, %s', @{$user}{qw/screen_name id name location description url/})
+        );
     }
     else {
         $self->bot_says($channel, "I don't know $id.");
@@ -1166,12 +1180,12 @@ event cmd_favorite => sub {
 
     $self->stash({
         handler    => '_handle_favorite',
-        candidates => [ map $_->id_str, @$recent ],
+        candidates => [ map $$_{id_str}, @$recent ],
     });
 
     $self->bot_says($channel, 'Which tweet?');
     for ( 1..@$recent ) {
-        $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]->text, $self->truncate_to));
+        $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]{text}, $self->truncate_to));
     }
 };
 
@@ -1205,10 +1219,10 @@ event cmd_rate_limit_status => sub {
         my $seconds_remaning = $r->{reset_time_in_seconds} - time;
         my $time_remaning = sprintf "%d:%02d", int($seconds_remaning / 60), $seconds_remaning % 60;
         $self->bot_says($channel, sprintf "%s API calls remaining for the next %s (until %s), hourly limit is %s",
-            $r->remaining_hits,
+            $$r{remaining_hits},
             $time_remaning,
             $reset_time,
-            $r->hourly_limit,
+            $$r{hourly_limit},
         );
     }
 };
@@ -1241,12 +1255,12 @@ event cmd_retweet => sub {
 
     $self->stash({
         handler    => '_handle_retweet',
-        candidates => [ map $_->id_str, @$recent ],
+        candidates => [ map $$_{id_str}, @$recent ],
     });
 
     $self->bot_says($channel, 'Which tweet?');
     for ( 1..@$recent ) {
-        $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]->text, $self->truncate_to));
+        $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]{text}, $self->truncate_to));
     }
 };
 
@@ -1309,14 +1323,14 @@ event cmd_reply => sub {
 
     $self->stash({
         handler    => '_handle_reply',
-        candidates => [ map $_->id_str, @$recent ],
+        candidates => [ map $_->{id_str}, @$recent ],
         recipient  => $nick,
         message    => $message,
     });
 
     $self->bot_says($channel, 'Which tweet?');
     for ( 1..@$recent ) {
-        $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]->text, $self->truncate_to));
+        $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]{text}, $self->truncate_to));
     }
 };
 
