@@ -10,6 +10,7 @@ has reply_id            => ( isa => 'Str', is => 'rw' );
 has direct_message_id   => ( isa => 'Str', is => 'rw' );
 has access_token        => ( isa => 'Str', is => 'rw' );
 has access_token_secret => ( isa => 'Str', is => 'rw' );
+has friends             => isa => 'HashRef', is => 'ro', default => sub { {} };
 
 no Moose;
 

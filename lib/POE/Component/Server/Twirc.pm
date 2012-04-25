@@ -12,6 +12,7 @@ use POE::Component::Server::Twirc::State;
 use Encode qw/decode/;
 use Try::Tiny;
 use Scalar::Util qw/reftype/;
+use AnyEvent::Twitter::Stream;
 
 with 'MooseX::Log::Log4perl';
 
@@ -159,32 +160,6 @@ has irc_botircname      => ( isa => 'Str', is => 'ro', default => 'Your friendly
 has irc_channel         => ( isa => 'Str', is => 'ro', default => '&twitter' );
 
 
-=item twitter_retry
-
-(Optional) The number of seconds between polls for new status updates.  Defaults to 300
-(5 minutes).  Twitter imposes a rate limit of 100 API calls per hour.  By default,
-after initial start up, twirc makes a single API call every C<twitter_retry>
-seconds.  Adding L</"check_replies"> and L</"check_direct_messages"> each
-add an additional API call.  Setting C<twitter_retry> too low can cause twirc
-to exceed the rate limit and delay receipt of messages.
-
-Use the L</"rate_limit_status"> command to check your available API calls.
-
-=cut
-
-has twitter_retry       => ( isa => 'Int', is => 'ro', default => 300 );
-
-
-=item twitter_retry_on_error
-
-(Optional) The number of seconds to wait before retrying a failed poll for friends,
-followers, or status updates.  Defaults to 60 (1 minute).
-
-=cut
-
-has twitter_retry_on_error => ( isa => 'Int', is => 'ro', default => 60 );
-
-
 =item twitter_alias
 
 (Optional) An alias to use for displaying incoming status updates from the owning user.
@@ -242,44 +217,6 @@ Defaults to 60.
 
 has truncate_to         => ( isa => 'Int', is => 'ro', default => 60 );
 
-=item check_friends_timeline
-
-(Optional) If true, checks for friends status updates every C<twitter_retry>
-seconds. Default is 1.
-
-=cut
-
-has check_friends_timeline => ( isa => 'Bool', is => 'rw', default => 1 );
-
-=item check_replies
-
-(Optional) If true, checks for @replies when polling for friends' timeline updates
-and merges them with normal status updates.  Normally, only replies from
-friends are displayed.  This provides the display of @replies from
-users not followed.
-
-C<check_replies> adds an API call, counted against Twitter's rate limit
-every L</"twitter_retry"> seconds.
-
-This also has the effect of adding senders of @replies to the channel,
-even though they are not followed.
-
-=cut
-
-has check_replies => ( isa => 'Bool', is => 'rw', default => 0 );
-
-=item check_direct_messages
-
-(Optional) If true, checks for direct messages in each timeline polling cycle.
-
-
-C<check_direct_messages> adds an API call, counted against Twitter's rate limit
-every L</"twitter_retry"> seconds.
-
-=cut
-
-has check_direct_messages => ( isa => 'Bool', is => 'rw', default => 0 );
-
 =item log_channel
 
 (Optional) If specified, twirc will post log messages to this channel.
@@ -296,16 +233,6 @@ replies, direct messages, and timelines.
 =cut
 
 has state_file => ( isa => 'Str', is => 'ro' );
-
-=item verbose_refresh
-
-(Optional) If set (1), when a refresh (whether automatic or the result of the
-L</"refresh"> command) finds no new messages, a notice to that effect will be
-written to the channel.
-
-=cut
-
-has verbose_refresh => ( isa => 'Bool', is => 'rw', default => 0 );
 
 =item plugins
 
@@ -388,23 +315,19 @@ has _topic_id     => ( isa => 'Str', is => 'rw', default => 0 );
 
 has client_encoding => ( isa => 'Str', is  => 'rw', default => sub { 'utf-8' } );
 
+has twitter_stream => is => 'rw';
+
 sub twitter {
     my ($self, $method, @args) = @_;
 
     my $r = try { $self->_twitter->$method(@args) }
     catch {
         if ( blessed $_ && $_->can('code') && $_->code == 502 ) {
-            $@ = 'Fail Whale';
+            $_ = 'Fail Whale';
         }
-        $self->twitter_error("$method -> $@");
+        $self->twitter_error("$method -> $_");
         undef;
     };
-
-    # On 13-Aug-2008, twitter introduced a new bug: user_timeline can receieve undef and plain
-    # strings (just the status text) in the results.  Filter the bogus results out.
-    if ( $r && $method eq 'user_timeline' ) {
-        $r = [ grep reftype $_ && reftype $_ eq 'HASH' && exists $_->{text}, @$r ];
-    }
 
     return $r;
 }
@@ -466,15 +389,15 @@ sub nicks_alternation {
 sub add_user {
     my ($self, $user) = @_;
 
-    $self->set_user_by_nick($user->screen_name, $user);
-    $self->set_user_by_id($user->id, $user);
+    $self->set_user_by_nick($user->{screen_name}, $user);
+    $self->set_user_by_id($user->{id}, $user);
 }
 
 sub delete_user {
     my ($self, $user) = @_;
 
-    $self->delete_user_by_id($user->id);
-    $self->delete_user_by_nick($user->screen_name);
+    $self->delete_user_by_id($user->{id});
+    $self->delete_user_by_nick($user->{screen_name});
 }
 
 sub get_replies          { shift->get_statuses(replies       => 'reply_id'            ) }
@@ -502,19 +425,23 @@ sub sort_unique_statuses {
     ];
 }
 
+sub _twitter_auth {
+    # ROT13: Gjvggre qbrf abg jnag pbafhzre xrl/frperg vapyhqrq va bcra
+    # fbhepr nccf. Gurl frrz gb guvax cebcevrgnel pbqr vf fnsre orpnhfr
+    # gur pbafhzre perqragvnyf ner boshfpngrq.  Fb, jr'yy boshfpngr gurz
+    # urer jvgu ebg13 naq jr'yy or "frpher" whfg yvxr n cebcevrgnel ncc.
+    ( grep tr/a-zA-Z/n-za-mN-ZA-M/, map $_,
+        pbafhzre_xrl     => 'ntqifMSFhMC0NdSWmBWgtN',
+        pbafhzre_frperg  => 'CDDA2pAiDcjb6saxt0LLwezCBV97VPYGAF0LMa0oH',
+    ),
+}
+
 sub _net_twitter_opts {
     my $self = shift;
 
     my %config = (
-        # ROT13: Gjvggre qbrf abg jnag pbafhzre xrl/frperg vapyhqrq va bcra
-        # fbhepr nccf. Gurl frrz gb guvax cebcevrgnel pbqr vf fnsre orpnhfr
-        # gur pbafhzre perqragvnyf ner boshfpngrq.  Fb, jr'yy boshfpngr gurz
-        # urer jvgu ebg13 naq jr'yy or "frpher" whfg yvxr n cebcevrgnel ncc.
-        ( grep tr/a-zA-Z/n-za-mN-ZA-M/, map $_,
-            pbafhzre_xrl     => 'ntqifMSFhMC0NdSWmBWgtN',
-            pbafhzre_frperg  => 'CDDA2pAiDcjb6saxt0LLwezCBV97VPYGAF0LMa0oH',
-        ),
-        traits               => [qw/API::REST OAuth InflateObjects/],
+        $self->_twitter_auth,
+        traits               => [qw/API::REST OAuth/],
         useragent_class      => 'LWP::UserAgent::POE',
         useragent            => "twirc/$VERSION",
         decode_html_entities => 1,
@@ -600,9 +527,39 @@ sub START {
     $self->_twitter->access_token($self->state->access_token);
     $self->_twitter->access_token_secret($self->state->access_token_secret);
 
-    $self->yield('friends');
-    $self->yield('user_timeline'); # for topic setting
-    $self->yield('poll_twitter');
+    my $w; $w = AnyEvent::Twitter::Stream->new(
+        $self->_twitter_auth,
+        token        => $self->state->access_token,
+        token_secret => $self->state->access_token_secret,
+        method       => 'userstream',
+        on_eof       => sub {
+            $self->log->debug("on_eof");
+            undef $w;
+        },
+        on_error   => sub {
+            $self->log->debug("on_error");
+        },
+        on_keepalive   => sub {
+            $self->log->debug("on_keepalive");
+        },
+        on_friends   => sub {
+            $self->log->debug("on_friends: ", JSON->new->encode(@_));
+            $self->yield(friends_ids => shift);
+        },
+        on_event     => sub {
+            $self->log->debug("on_event");
+        },
+        on_tweet     => sub {
+            $self->log->debug("on_tweet");
+            $self->yield(display_status => shift);
+        },
+        on_delete    => sub {
+            $self->log->debug("on_delete");
+        },
+    );
+
+    POE::Kernel->sig(TERM => 'poco_shutdown');
+    POE::Kernel->sig(INT  => 'poco_shutdown');
 
     return $self;
 }
@@ -630,7 +587,7 @@ sub xauth {
     }
     catch {
         if ( /401 Unauthorize/ ) {
-            die "Twitter login failed. Check your username and passord.\n";
+            die "Twitter login failed. Check your username and password.\n";
         }
 
         die "Twitter login failed: $_\n";
@@ -650,6 +607,7 @@ event poco_shutdown => sub {
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
+    $_[KERNEL]->call($self->_twitter->ua->{poco_alias}, 'shutdown');
     if ( $self->state_file ) {
         try { $self->state->store($self->state_file) }
         catch {
@@ -695,7 +653,6 @@ event ircd_daemon_join => sub {
         $self->joined(1);
         $self->log->debug("    joined!");
         $self->yield('display_direct_messages');
-        $self->yield('display_statuses');
         return;
     }
     elsif ( $self->log_channel && $ch eq $self->log_channel ) {
@@ -820,84 +777,72 @@ event ircd_daemon_privmsg => sub {
 # Twitter events
 ########################################################################
 
-# This is the main loop; check for updates every twitter_retry seconds.
-event poll_twitter => sub {
-    my ($self) = @_;
+sub stale_after () { 7*24*3600 } # 1 week
+sub is_stale {
+    my ( $self, $user ) = @_;
 
-    $self->yield('direct_messages')  if $self->check_direct_messages;
-    $self->yield('timeline');
-    $_[KERNEL]->delay(poll_twitter => $self->twitter_retry);
+    return time - $user->{FRESH} > $self->stale_after;
+}
+
+event friend_join => sub {
+    my ( $self, $friend ) = @_[OBJECT, ARG0];
+
+    $self->post_ircd(add_spoofed_nick => { nick => $friend->{screen_name}, ircname => $friend->{name} });
+    $self->post_ircd(daemon_cmd_join => $friend->{screen_name}, $self->irc_channel);
+    $self->add_user($friend);
+    $self->post_ircd(daemon_cmd_mode => $self->irc_botname, $self->irc_channel, '+v', $friend->{screen_name})
+        if $friend->{following};
 };
 
-event display_statuses => sub {
-    my ($self) = @_;
+event lookup_friends => sub {
+    my ( $self, $ids ) = @_[OBJECT, ARG0];
 
-    $self->log->debug("[display_statuses] ", scalar @{$self->tweet_stack}, " messages");
+    return unless @$ids;
 
-    while ( my $entry = shift @{$self->tweet_stack} ) {
-        my $name = $entry->user->screen_name;
-        $name = $self->twitter_alias if $name eq $self->irc_nickname;
-        my $text = try { "RT \@${ \$entry->retweeted_status->user->screen_name }: ${ \$entry->retweeted_status->text }" }
-                || $entry->text;
-        $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_)
-            for split /[\r\n]+/, $text;
+    my $fresh = time;
+    my $r = $self->twitter(lookup_users => { user_id => $ids });
+    for my $friend ( @{$r || []} ) {
+        delete $friend->{status};
+        $friend->{FRESH} = $fresh;
+        $self->state->friends->{$friend->{id}} = $friend;
+        $self->yield(friend_join => $friend);
     }
+
+    $self->state->store($self->state_file);
 };
 
-# Add friends to the channel
-event friends => sub {
-    my ($self, $cursor ) = @_[OBJECT, ARG0];
+event friends_ids => sub {
+    my ( $self, $friends_ids ) = @_[OBJECT, ARG0];
 
-    my $retry = $self->twitter_retry_on_error;
-
-    $self->log->debug("[twitter:friends] calling...");
-    for ( $cursor ||= -1; $cursor;) {
-        my $r = $self->twitter(friends => { cursor => $cursor });
-        unless ( $r ) {
-            $_[KERNEL]->delay(friends => $retry, $cursor);
-            return;
-        }
-        $self->log->debug("    friends returned ", scalar @{$r->{users}}, " friends");
-
-        $cursor = $r->{next_cursor};
-
-        for my $friend ( @{$r->{users}} ) {
-            next if $self->get_user_by_id($friend->id);
-
-            $self->post_ircd(add_spoofed_nick => { nick => $friend->screen_name, ircname => $friend->name });
-            $self->post_ircd(daemon_cmd_join => $friend->screen_name, $self->irc_channel);
-            $self->add_user($friend);
-        }
-    }
-    $self->yield('followers');
-};
-
-# Give friends who are also followers voice; it's just a visual hint to the user.
-event followers => sub {
-    my ($self, $cursor ) = @_[OBJECT, ARG0];
-
-    my $retry = $self->twitter_retry_on_error;
-
-    $self->log->debug("[twitter:followers] calling...");
-    for ( $cursor ||= -1; $cursor; ) {
-        my $r = $self->twitter(followers => { cursor => $cursor });
-        unless ( $r ) {
-            $self->twitter_error("request for followers failed; retrying in $retry seconds");
-            $_[KERNEL]->delay(followers => $retry, $cursor);
-            return;
-        }
-
-        $cursor = $r->{next_cursor};
-
-        $self->log->debug("    followers returned ", scalar @{$r->{users}}, " followers");
-
-        for my $follower ( @{$r->{users}} ) {
-            if ( $self->get_user_by_nick($follower->screen_name) ) {
-                $self->post_ircd(daemon_cmd_mode =>
-                    $self->irc_botname, $self->irc_channel, '+v', $follower->screen_name);
+    my $buffer = [];
+    for my $id ( @$friends_ids ) {
+        my $friend = $self->state->friends->{$id};
+        if ( !$friend || $self->is_stale($friend) ) {
+            push @$buffer, $id;
+            if ( @$buffer == 100 ) {
+                $self->yield(lookup_friends => $buffer);
+                $buffer = [];
             }
         }
+        else {
+            $self->yield(friend_join => $friend);
+        }
     }
+
+    $self->yield(lookup_friends => $buffer);
+};
+
+event display_status => sub {
+    my ( $self, $entry ) = @_[OBJECT, ARG0];
+
+    my $name = $entry->{user}{screen_name};
+    $name = $self->twitter_alias if $name eq $self->irc_nickname;
+    my $text = $entry->{retweeted_status}
+             ? "RT \@$entry->{retweeted_status}{user}{screen_name}: $entry->{retweeted_status}{text}"
+             : $entry->{text};
+
+    $self->log->debug("display_status: <$name> $text");
+    $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_) for split /[\r\n]+/, $text;
 };
 
 event direct_messages => sub {
@@ -996,63 +941,8 @@ event timeline => sub {
         push @{ $self->tweet_stack }, $status;
     }
 
-    if ( @$statuses == 0 && $self->verbose_refresh ) {
-      $self->bot_notice($channel, "That refresh didn't get any new tweets.");
-    }
-
     $self->set_topic($new_topic) if $new_topic;
-    $self->yield('display_statuses') if $self->joined;
     $self->yield('poll_cleanup');
-};
-
-# handle cleanup after the important work has had a chance to complete
-event poll_cleanup => sub {
-    my ($self) = @_;
-
-    # store state
-    if ( $self->state_file ) {
-        try { $self->state->store($self->state_file) }
-        catch {
-            s/ at .*//s;
-            $self->log->error($_);
-        };
-    }
-
-    # It is possible to get here with _unread_posts populated, for instance, if a post
-    # has been sent *during* processing of the most recent poll results.  However, we
-    # should never have an _uread post older than friends_timeline_id.
-    for my $id ( keys %{$self->_unread_posts} ) {
-        if ( id_le($id, $self->state->friends_timeline_id) ) {
-            $self->log->error("recent post missing from the feed: $id");
-            delete $self->_unread_posts->{$id};
-        }
-    }
-};
-
-event user_timeline => sub {
-    my ($self) = @_;
-
-    $self->log->debug("[user_timetline] calling...");
-    # Work around a twitter api bug by passing id; without it, sometimes the wrong users statuses
-    # are returned.
-    my $statuses = $self->twitter(user_timeline => { screen_name =>  $self->twitter_screen_name });
-    unless ( $statuses ) {
-        $_[KERNEL]->delay(user_timeline => 60);
-    }
-    $self->log->debug("    user_timeline returned");
-
-    return unless @$statuses;
-
-    for my $status ( @$statuses ) {
-        # skip @replies
-        unless ( $status->text =~ /^\s*\@/ ) {
-            $self->set_topic($status);
-            return;
-        }
-    }
-
-    #couldn't find an non-@reply status, punt
-    $self->set_topic($statuses->[0]);
 };
 
 ########################################################################
@@ -1301,55 +1191,6 @@ sub _handle_favorite {
     return 0; # unhandled
 };
 
-=item check_friends_timeline I<on|off>
-
-Turns friends timeline checking on or off.  See L</check_friends_timeline> in
-configuration.
-
-=cut
-
-event cmd_check_friends_timeline => sub {
-    my ($self, $channel, $onoff) = @_[OBJECT, ARG0, ARG1];
-
-    unless ( $onoff && $onoff =~ /^on|off$/ ) {
-        $self->bot_says($channel, "Usage: check_friends_timeline on|off");
-        return;
-    }
-    $self->check_friends_timeline($onoff eq 'on' ? 1 : 0);
-};
-
-=item check_replies I<on|off>
-
-Turns reply checking on or off.  See L</"check_replies"> in configuration.
-
-=cut
-
-event cmd_check_replies => sub {
-    my ($self, $channel, $onoff) = @_[OBJECT, ARG0, ARG1];
-
-    unless ( $onoff && $onoff =~ /^on|off$/ ) {
-        $self->bot_says($channel, "Usage: check_replies on|off");
-        return;
-    }
-    $self->check_replies($onoff eq 'on' ? 1 : 0);
-};
-
-=item check_direct_messages I<on|off>
-
-Turns direct message checking on or off.  See L</"check_direct_messages"> in configuration.
-
-=cut
-
-event cmd_check_direct_messages => sub {
-    my ($self, $channel, $onoff) = @_[OBJECT, ARG0, ARG1];
-
-    unless ( $onoff && $onoff =~ /^on|off$/ ) {
-        $self->bot_says($channel, "Usage: check_direct_messages on|off");
-        return;
-    }
-    $self->check_direct_messages($onoff eq 'on' ? 1 : 0);
-};
-
 =item rate_limit_status
 
 Displays the remaining number of API requests available in the current hour.
@@ -1535,33 +1376,10 @@ event cmd_help => sub {
     my ($self, $channel, $argstr)=@_[OBJECT, ARG0, ARG1];
     $self->bot_says($channel, "Available commands:");
     $self->bot_says($channel, join ' ' => sort qw/
-        post follow unfollow block unblock whois notify refresh favorite
-        check_replies rate_limit_status verbose_refresh
-        retweet report_spam
+        post follow unfollow block unblock whois notify favorite
+        rate_limit_status retweet report_spam
     /);
     $self->bot_says($channel, '/msg nick for a direct message.')
-};
-
-event cmd_refresh => sub {
-    my ($self) = @_;
-
-    $self->yield('poll_twitter');
-};
-
-=item verbose_refresh I<on|off>
-
-Turns C<verbose_refresh> on or off.  See L</"verbose_refresh"> in configuration.
-
-=cut
-
-event cmd_verbose_refresh => sub {
-    my ($self, $channel, $onoff) = @_[OBJECT, ARG0, ARG1];
-
-    unless ( $onoff && $onoff =~ /^on|off$/ ) {
-        $self->bot_says($channel, "Usage: verbose_refresh on|off");
-        return;
-    }
-    $self->verbose_refresh($onoff eq 'on' ? 1 : 0);
 };
 
 1;

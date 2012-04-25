@@ -8,6 +8,7 @@ all_from 'lib/POE/Component/Server/Twirc.pm';
 
 install_script  'bin/twirc';
 
+requires 'AnyEvent::Twitter::Stream';
 requires 'Config::Any';
 requires 'Email::Valid'                => 0;
 requires 'Encode';
