@@ -315,8 +315,6 @@ has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
 
 has client_encoding => ( isa => 'Str', is  => 'rw', default => sub { 'utf-8' } );
 
-has twitter_stream => is => 'rw';
-
 sub twitter {
     my ($self, $method, @args) = @_;
 
@@ -432,6 +430,50 @@ sub _net_twitter_opts {
     return %config;
 }
 
+has twitter_stream_watcher => is => 'rw', clearer => 'disconnect_twitter_stream',
+        predicate => 'has_twitter_stream_watcher';
+
+sub connect_twitter_stream {
+    my $self = shift;
+
+    my $w; $w = AnyEvent::Twitter::Stream->new(
+        $self->_twitter_auth,
+        token        => $self->state->access_token,
+        token_secret => $self->state->access_token_secret,
+        method       => 'userstream',
+        on_connect   => sub {
+            $self->twitter_stream_watcher($w);
+            $self->log->info('Connected to Twitter');
+        },
+        on_eof       => sub {
+            $self->log->debug("on_eof");
+            $self->bot_notice($self->irc_channel, "Twitter stream disconnected");
+            $self->connect_twitter_stream if $self->has_twitter_stream_watcher;
+        },
+        on_error   => sub {
+            $self->log->debug("on_error");
+            $self->bot_notice($self->irc_channel, "Twitter stream error");
+        },
+        on_keepalive   => sub {
+            $self->log->debug("on_keepalive");
+        },
+        on_friends   => sub {
+            $self->log->debug("on_friends: ", JSON->new->encode(@_));
+            $self->yield(friends_ids => shift);
+        },
+        on_event     => sub {
+            $self->log->debug("on_event: ", JSON->new->encode(@_));
+        },
+        on_tweet     => sub {
+            $self->log->debug("on_tweet");
+            $self->yield(display_status => shift);
+        },
+        on_delete    => sub {
+            $self->log->debug("on_delete");
+        },
+    );
+}
+
 sub START {
     my ($self) = @_;
 
@@ -497,39 +539,10 @@ sub START {
     $self->_twitter->access_token($self->state->access_token);
     $self->_twitter->access_token_secret($self->state->access_token_secret);
 
-    my $w; $w = AnyEvent::Twitter::Stream->new(
-        $self->_twitter_auth,
-        token        => $self->state->access_token,
-        token_secret => $self->state->access_token_secret,
-        method       => 'userstream',
-        on_eof       => sub {
-            $self->log->debug("on_eof");
-            undef $w;
-        },
-        on_error   => sub {
-            $self->log->debug("on_error");
-        },
-        on_keepalive   => sub {
-            $self->log->debug("on_keepalive");
-        },
-        on_friends   => sub {
-            $self->log->debug("on_friends: ", JSON->new->encode(@_));
-            $self->yield(friends_ids => shift);
-        },
-        on_event     => sub {
-            $self->log->debug("on_event");
-        },
-        on_tweet     => sub {
-            $self->log->debug("on_tweet");
-            $self->yield(display_status => shift);
-        },
-        on_delete    => sub {
-            $self->log->debug("on_delete");
-        },
-    );
-
     POE::Kernel->sig(TERM => 'poco_shutdown');
     POE::Kernel->sig(INT  => 'poco_shutdown');
+
+    $self->connect_twitter_stream;
 
     $self->yield('get_topic');
 
@@ -576,6 +589,7 @@ event poco_shutdown => sub {
     my ($self) = @_;
 
     $self->log->debug("[poco_shutdown]");
+    $self->disconnect_twitter_stream;
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
