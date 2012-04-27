@@ -451,8 +451,9 @@ sub connect_twitter_stream {
             $self->connect_twitter_stream if $self->has_twitter_stream_watcher;
         },
         on_error   => sub {
-            $self->log->debug("on_error");
-            $self->bot_notice($self->irc_channel, "Twitter stream error");
+            my $e = shift;
+            $self->log->debug("on_error: $e");
+            $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
         },
         on_keepalive   => sub {
             $self->log->debug("on_keepalive");
