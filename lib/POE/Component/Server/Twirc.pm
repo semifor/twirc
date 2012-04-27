@@ -464,7 +464,7 @@ sub connect_twitter_stream {
             $self->yield(friends_ids => shift);
         },
         on_event     => sub {
-            $self->log->debug("on_event: ", JSON->new->encode(@_));
+            $self->yield(on_event => @_);
         },
         on_tweet     => sub {
             $self->log->debug("on_tweet");
@@ -880,6 +880,40 @@ event display_status => sub {
     $self->log->debug("display_status: <$name> $text");
     $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_) for split /[\r\n]+/, $text;
 };
+
+event on_event => sub {
+    my ( $self, $msg ) = @_[OBJECT, ARG0];
+
+    if ( my $event = $$msg{event} ) {
+        my $method = "on_event_$event";
+        return $self->$method($msg) if $self->can($method);
+
+        $self->bot_says($self->irc_channel, "Unhandled Twitter stream event: $event");
+        $self->log->warn("unhandled event", JSON->new->pretty->encode($msg));
+    }
+    else {
+        $self->log->warn("on_event contains no 'event': ", JSON->new->pretty->encode($msg));
+        $self->bot_says($self->irc_channel, "Twitter stream on_event with no 'event' tag");
+    }
+};
+
+sub on_event_favorite {
+    my ( $self, $msg ) = @_;
+
+    my $status = $$msg{target_object};
+
+    my $who = $$msg{source}{screen_name};
+    $who = "you" if $who eq $self->twitter_screen_name;
+
+    my $target_screen_name = $$status{user}{screen_name};
+    $target_screen_name = $target_screen_name eq $self->twitter_screen_name
+        ? 'your' : "\@$target_screen_name";
+
+    my $link = "https://twitter.com/$$status{user}{screen_name}/status/$$status{id}";
+    my $text = $self->formatted_status_text($status);
+    $self->bot_notice($self->irc_channel,
+        elide("$who favorited $target_screen_name: $text", 80) . "[$link]");
+}
 
 event direct_messages => sub {
     my ($self) = @_;
