@@ -14,6 +14,7 @@ use Try::Tiny;
 use Scalar::Util qw/reftype/;
 use AnyEvent::Twitter::Stream;
 use HTML::Entities;
+use Regexp::Common qw/URI/;
 
 with 'MooseX::Log::Log4perl';
 
@@ -955,7 +956,10 @@ event cmd_post => sub {
 
     $self->log->debug("[cmd_post_status]");
 
-    if ( (my $n = length($text) - 140) > 0 ) {
+    my $http_urls = (my $stripped = $text) =~ s/$RE{URI}{HTTP}//g;
+    my $https_urls = $stripped =~ s/$RE{URI}{HTTP}{-scheme => 'https'}//g;
+
+    if ( (my $n = length($stripped) + $http_urls * 20 + $https_urls * 21 - 140) > 0 ) {
         $self->bot_says($channel, "Message not sent; $n characters too long. Limit is 140 characters.");
         return;
     }

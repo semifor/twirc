@@ -28,6 +28,7 @@ requires 'Path::Class::File';
 requires 'POE::Component::Server::IRC' => 0.02005;
 requires 'POE::Component::TSTP';
 requires 'Proc::Daemon';
+requires 'Regexp::Common::URI';
 requires 'Scalar::Util';
 requires 'String::Truncate';
 requires 'Try::Tiny';
