@@ -253,29 +253,30 @@ has _ircd => (
        accessor => 'ircd', isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1 );
 has _twitter => ( isa => 'Net::Twitter', is => 'rw' );
 has _users_by_nick => (
-    metaclass => 'Collection::Hash',
+    traits => [qw/Hash/],
     isa => 'HashRef[HashRef|Object]',
     is => 'rw',
     default => sub { {} },
-    provides => {
-        set      => 'set_user_by_nick',
-        get      => 'get_user_by_nick',
-        empty    => 'has_users_by_nick',
-        count    => 'num_users_by_nick',
-        'delete' => 'delete_user_by_nick',
-        'keys'   => 'user_nicks',
+    handles => {
+        set_user_by_nick    => 'set',
+        get_user_by_nick    => 'get',
+        num_users_by_nick   => 'count',
+        delete_user_by_nick => 'delete',
+        user_nicks          => 'keys',
     },
 );
 
 has _users_by_id => (
-    metaclass => 'Collection::Hash',
+    traits => [qw/Hash/],
     isa => 'HashRef[HashRef|Object]',
     is  => 'rw',
     default => sub { {} },
-    provides => {
-        set      => 'set_user_by_id',
-        get      => 'get_user_by_id',
-        'delete' => 'delete_user_by_id',
+    handles => {
+        set_user_by_id    => 'set',
+        get_user_by_id    => 'get',
+        delete_user_by_id => 'delete',
+        user_ids          => 'keys',
+        get_users         => 'values',
     },
 );
 
@@ -584,7 +585,14 @@ sub xauth {
 
     $self->state->access_token($token);
     $self->state->access_token_secret($secret);
-    try { $self->state->store($self->state_file) };
+    if ( $self->state_file ) {
+        try { $self->state->store($self->state_file) }
+        catch {
+            s/ at .*//s;
+            $self->log->error($_);
+            $self->bot_notice($self->irc_channel, "Error storing state file: $_");
+        };
+    }
 };
 
 event poco_shutdown => sub {
@@ -601,6 +609,7 @@ event poco_shutdown => sub {
         catch {
             s/ at .*//s;
             $self->log->error($_);
+            $self->bot_notice($self->irc_channel, "Error storing state file: $_");
         };
     }
 
@@ -612,7 +621,8 @@ event poco_shutdown => sub {
 event get_topic => sub {
     my $self = $_[OBJECT];
 
-    if ( my $r = $self->twitter('verify_credentials',{ include_entities => 1 }) ) {
+    if ( my $r = $self->twitter(verify_credentials => { include_entities => 1 }) ) {
+        $self->twitter_screen_name($$r{screen_name});
         if ( my $status = delete $$r{status} ) {
             $$status{user} = $r;
             $self->set_topic($self->formatted_status_text($status));
@@ -772,11 +782,36 @@ event ircd_daemon_privmsg => sub {
     }
 };
 
-sub stale_after () { 7*24*3600 } # 1 week
-sub is_stale {
+sub friends_stale_after () { 7*24*3600 } # 1 week
+sub is_friend_stale {
     my ( $self, $user ) = @_;
 
-    return time - $user->{FRESH} > $self->stale_after;
+    return time - $user->{FRESH} > $self->friends_stale_after;
+}
+
+sub followers_stale_after () { 24*3600 } # 1 day
+sub are_followers_stale {
+    my $self = shift;
+
+    return time - $self->state->followers_updated_at > $self->followers_stale_after;
+}
+
+sub add_follower_id {
+    my ( $self, $id ) = @_;
+
+    $self->state->followers->{$id} = undef;
+}
+
+sub remove_follower_id {
+    my ( $self, $id ) = @_;
+
+    delete $self->state->followers->{$id};
+}
+
+sub is_follower_id {
+    my ( $self, $id ) = @_;
+
+    return exists $self->state->followers->{$id};
 }
 
 event friend_join => sub {
@@ -785,6 +820,10 @@ event friend_join => sub {
     $self->post_ircd(add_spoofed_nick => { nick => $friend->{screen_name}, ircname => $friend->{name} });
     $self->post_ircd(daemon_cmd_join => $friend->{screen_name}, $self->irc_channel);
     $self->add_user($friend);
+    if ( $self->is_follower_id($$friend{id}) ) {
+        $self->post_ircd(daemon_cmd_mode =>
+            $self->irc_botname, $self->irc_channel, '+v', $$friend{screen_name});
+    }
 };
 
 event lookup_friends => sub {
@@ -801,25 +840,39 @@ event lookup_friends => sub {
         $self->yield(friend_join => $friend);
     }
 
-    $self->state->store($self->state_file);
+    $self->state->store($self->state_file) if $self->state_file;
 };
 
 event get_followers_ids => sub {
     my ( $self ) = $_[OBJECT];
 
+    my %followers;
     for ( my $cursor = -1; $cursor; ) {
         if ( my $r = $self->twitter(followers_ids => { cursor => $cursor }) ) {
             for my $id ( @{$$r{ids}} ) {
-                if ( my $friend = $self->get_user_by_id($id) ) {
-                    $self->post_ircd(daemon_cmd_mode => $self->irc_botname, $self->irc_channel, '+v',
-                        $friend->{screen_name});
-                }
+                $followers{$id} = undef;
             }
             $cursor = $$r{next_cursor};
         }
         else {
             $cursor = 0;
         }
+    }
+
+    $self->state->followers(\%followers);
+    $self->state->followers_updated_at(time);
+
+    $self->yield('set_voice');
+};
+
+event set_voice => sub {
+    my  $self = $_[OBJECT];
+
+    for my $user ( $self->get_users ) {
+        my $mode = $self->is_follower_id($$user{id}) ? '+v' : '-v';
+
+        $self->post_ircd(daemon_cmd_mode => $self->irc_botname, $self->irc_channel, $mode,
+            $$user{screen_name});
     }
 };
 
@@ -851,7 +904,7 @@ event friends_ids => sub {
     my $buffer = [];
     for my $id ( @$friends_ids ) {
         my $friend = $self->state->friends->{$id};
-        if ( !$friend || $self->is_stale($friend) ) {
+        if ( !$friend || $self->is_friend_stale($friend) ) {
             push @$buffer, $id;
             if ( @$buffer == 100 ) {
                 $self->yield(lookup_friends => $buffer);
@@ -896,6 +949,27 @@ event on_event => sub {
         $self->bot_says($self->irc_channel, "Twitter stream on_event with no 'event' tag");
     }
 };
+
+sub on_event_follow {
+    my ( $self, $msg ) = @_;
+
+    if ( my $source = $$msg{source} ) {
+        my $target = $$msg{target} || return;
+
+        # new friend
+        if ( $$source{screen_name} eq $self->twitter_screen_name ) {
+            $self->yield(friend_join => $target);
+            $self->bot_notice($self->irc_channel, qq/Now following $$target{screen_name}./);
+        }
+
+        # new follower
+        elsif ( $$target{screen_name} eq $self->twitter_screen_name ) {
+            $self->bot_notice($self->irc_channel, qq`\@$$source{screen_name} "$$source{name}" `
+                    . qq`is following you https://twitter.com/$$source{screen_name}`);
+            $self->add_follower($$source{id});
+        }
+    }
+}
 
 sub on_event_favorite {
     my ( $self, $msg ) = @_;
@@ -1017,21 +1091,7 @@ event cmd_follow => sub {
         return;
     }
 
-    my $friend = $self->twitter(create_friend => $id) || return;
-
-    my $nick = $$friend{screen_name};
-    my $name = $$friend{name};
-    $self->post_ircd('add_spoofed_nick', { nick => $nick, ircname => $name });
-    $self->post_ircd(daemon_cmd_join => $name, $self->irc_channel);
-    $self->add_user($friend);
-
-    my @args = ($nick, $self->twitter_screen_name);
-
-    if ( $self->twitter(relationship_exists => @args) ) {
-        $self->post_ircd(daemon_cmd_mode =>
-            $self->irc_botname, $self->irc_channel, '+v', $nick);
-        $self->bot_notice($channel, qq/Now following $id./);
-    }
+    $self->twitter(create_friend => $id);
 };
 
 =item unfollow I<id>
@@ -1044,7 +1104,8 @@ friendship.
 event cmd_unfollow => sub {
     my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
-    if ( !$self->get_user_by_nick($id) ) {
+    my $user = $self->get_user_by_nick($id);
+    unless ( $user ) {
         $self->bot_says($channel, qq/You don't appear to be following $id./);
         return;
     }
@@ -1054,6 +1115,7 @@ event cmd_unfollow => sub {
     $self->post_ircd(daemon_cmd_part => $id, $self->irc_channel);
     $self->post_ircd(del_spooked_nick => $id);
     $self->bot_notice($channel, qq/No longer following $id./);
+    $self->delete_user($user);
 };
 
 =item block I<id>
