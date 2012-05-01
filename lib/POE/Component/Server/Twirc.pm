@@ -468,8 +468,16 @@ sub connect_twitter_stream {
             $self->yield(on_event => @_);
         },
         on_tweet     => sub {
+            my $msg = shift;
+
             $self->log->debug("on_tweet");
-            $self->yield(display_status => shift);
+
+            if ( my $dm = delete $$msg{direct_message} ) {
+                $self->yield(on_direct_message => $dm);
+            }
+            else {
+                $self->yield(display_status => $msg);
+            }
         },
         on_delete    => sub {
             $self->log->debug("on_delete");
@@ -661,7 +669,6 @@ event ircd_daemon_join => sub {
     if ( $ch eq $self->irc_channel ) {
         $self->joined(1);
         $self->log->debug("    joined!");
-        $self->yield('display_direct_messages');
         return;
     }
     elsif ( $self->log_channel && $ch eq $self->log_channel ) {
@@ -989,52 +996,22 @@ sub on_event_favorite {
         elide("$who favorited $target_screen_name: $text", 80) . "[$link]");
 }
 
-event direct_messages => sub {
-    my ($self) = @_;
+event on_direct_message => sub {
+    my ( $self, $msg ) = @_[OBJECT, ARG0];
 
-    # We don't want to flood the user with DMs, so if this is the first time,
-    # i.e., no DM id in saved state, just set the high water mark and return.
-    unless ( $self->state->direct_message_id ) {
-        if ( my $high_water = $self->twitter('direct_messages') ) {
-            $self->state->direct_message_id(@$high_water ? $high_water->[0]{id} : 1);
-        }
+    if ( $$msg{recipient_screen_name} ne $self->twitter_screen_name ) {
+        $self->log->info('direct message sent to @', $$msg{recipient_screen_name});
         return;
     }
 
-    my $since_id = $self->state->direct_message_id;
-    my $messages = $self->twitter(direct_messages => { since_id => $since_id }) || return;
+    my $name = $$msg{sender_screen_name};
+    $name = $self->twitter_alias if $name eq $self->irc_nickname;
 
-    if ( @$messages ) {
-        $self->state->direct_message_id($messages->[0]{id})
-            if $messages->[0]{id} > $since_id; # lack of faith in twitterapi
-
-        while ( my $msg = pop @$messages ) {
-            # workarond twitter bug where since_id parameter is ignored:
-            next unless $$msg{id} > $since_id;
-
-            my $nick = $msg->{sender}{screen_name};
-            unless ( $self->get_user_by_nick($nick) ) {
-                $self->log->warn("Joining $nick from a direct message; expected $nick already joined.");
-                $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $msg->{sender}{name} });
-                $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
-                $self->add_user($$msg{sender});
-            }
-
-            push @{$self->dm_stack}, $msg;
-        }
-        $self->yield('display_direct_messages') if $self->joined;
-    }
-};
-
-event display_direct_messages => sub {
-    my ($self) = @_;
-
-    while ( my $msg = shift @{$self->dm_stack} ) {
-        my $name = $$msg{sender_screen_name};
-        $name = $self->twitter_alias if $name eq $self->irc_nickname;
-        $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_nickname, $_)
-            for split /\r?\n/, $$msg{text};
-    }
+    my $sender = $$msg{sender};
+    $self->post_ircd(add_spoofed_nick => { nick => $$sender{screen_name}, ircname => $$sender{name} });
+    my $text = $self->formatted_status_text($msg);
+    $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_nickname, $_)
+            for split /\r?\n/, $text;
 };
 
 ########################################################################
