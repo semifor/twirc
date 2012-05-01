@@ -966,7 +966,7 @@ sub on_event_follow {
         elsif ( $$target{screen_name} eq $self->twitter_screen_name ) {
             $self->bot_notice($self->irc_channel, qq`\@$$source{screen_name} "$$source{name}" `
                     . qq`is following you https://twitter.com/$$source{screen_name}`);
-            $self->add_follower($$source{id});
+            $self->add_follower_id($$source{id});
         }
     }
 }
