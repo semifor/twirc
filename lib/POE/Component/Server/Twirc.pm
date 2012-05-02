@@ -448,20 +448,20 @@ sub connect_twitter_stream {
             $self->log->info('Connected to Twitter');
         },
         on_eof       => sub {
-            $self->log->debug("on_eof");
+            $self->log->trace("on_eof");
             $self->bot_notice($self->irc_channel, "Twitter stream disconnected");
             $self->connect_twitter_stream if $self->has_twitter_stream_watcher;
         },
         on_error   => sub {
             my $e = shift;
-            $self->log->debug("on_error: $e");
+            $self->log->error("on_error: $e");
             $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
         },
         on_keepalive   => sub {
-            $self->log->debug("on_keepalive");
+            $self->log->trace("on_keepalive");
         },
         on_friends   => sub {
-            $self->log->debug("on_friends: ", JSON->new->encode(@_));
+            $self->log->trace("on_friends: ", JSON->new->encode(@_));
             $self->yield(friends_ids => shift);
         },
         on_event     => sub {
@@ -501,7 +501,7 @@ sub connect_twitter_stream {
             }
         },
         on_delete    => sub {
-            $self->log->debug("on_delete");
+            $self->log->trace("on_delete");
         },
     );
 }
@@ -517,7 +517,7 @@ sub START {
                 network    => 'SimpleNET'
             },
             inline_states => {
-                _stop  => sub { $self->log->debug('[ircd:stop]') },
+                _stop  => sub { $self->log->trace('[ircd:stop]') },
             },
         )
     );
@@ -586,7 +586,7 @@ sub START {
 event _child => sub {
     my ($self, $kernel, $event, $child) = @_[OBJECT, KERNEL, ARG0, ARG1];
 
-    $self->log->debug("[_child] $event $child");
+    $self->log->trace("[_child] $event $child");
     $kernel->detach_child($child) if $event eq 'create';
 };
 
@@ -627,7 +627,7 @@ sub xauth {
 event poco_shutdown => sub {
     my ($self) = @_;
 
-    $self->log->debug("[poco_shutdown]");
+    $self->log->trace("[poco_shutdown]");
     $self->disconnect_twitter_stream;
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
@@ -666,7 +666,7 @@ event get_topic => sub {
 event ircd_daemon_nick => sub {
     my ($self, $sender, $nick) = @_[OBJECT, SENDER, ARG0];
 
-    $self->log->debug("[ircd_daemon_nick] $nick");
+    $self->log->trace("[ircd_daemon_nick] $nick");
 
     # if it's a nick change, we only get ARG0 and ARG1
     return unless defined $_[ARG2];
@@ -681,7 +681,7 @@ event ircd_daemon_nick => sub {
 event ircd_daemon_join => sub {
     my($self, $sender, $user, $ch) = @_[OBJECT, SENDER, ARG0, ARG1];
 
-    $self->log->debug("[ircd_daemon_join] $user, $ch");
+    $self->log->trace("[ircd_daemon_join] $user, $ch");
     return unless my($nick) = $user =~ /^([^!]+)!/;
     return if $self->get_user_by_nick($nick);
     return if $nick eq $self->irc_botname;
@@ -689,7 +689,7 @@ event ircd_daemon_join => sub {
 
     if ( $ch eq $self->irc_channel ) {
         $self->joined(1);
-        $self->log->debug("    joined!");
+        $self->log->trace("    joined!");
         return;
     }
     elsif ( $self->log_channel && $ch eq $self->log_channel ) {
@@ -697,7 +697,7 @@ event ircd_daemon_join => sub {
         $appender->dump_history;
     }
     else {
-        $self->log->debug("    ** part **");
+        $self->log->trace("    ** part **");
         # only one channel allowed
         $sender->get_heap()->_daemon_cmd_part($nick, $ch);
     }
@@ -719,7 +719,7 @@ event ircd_daemon_part => sub {
 event ircd_daemon_quit => sub {
     my($self, $user) = @_[OBJECT, ARG0];
 
-    $self->log->debug("[ircd_daemon_quit]");
+    $self->log->trace("[ircd_daemon_quit]");
     return unless my($nick) = $user =~ /^([^!]+)!/;
     return if $self->get_user_by_nick($nick);
     return if $nick eq $self->irc_botname;
@@ -739,7 +739,7 @@ event ircd_daemon_public => sub {
 
     my $nick = ( $user =~ m/^(.*)!/)[0];
 
-    $self->log->debug("[ircd_daemon_public] $nick: $text");
+    $self->log->trace("[ircd_daemon_public] $nick: $text");
     return unless $nick eq $self->irc_nickname;
 
     # give any command handler a shot
@@ -958,7 +958,7 @@ event on_tweet => sub {
         $self->set_topic($text);
     }
 
-    $self->log->debug("display_status: <$name> $text");
+    $self->log->trace("on_tweet: <$name> $text");
     $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_) for split /[\r\n]+/, $text;
 };
 
@@ -1086,7 +1086,7 @@ Post a status update.  E.g.,
 event cmd_post => sub {
     my ($self, $channel, $text) = @_[OBJECT, ARG0, ARG1];
 
-    $self->log->debug("[cmd_post_status]");
+    $self->log->trace("[cmd_post_status]");
 
     my $http_urls = (my $stripped = $text) =~ s/$RE{URI}{HTTP}//g;
     my $https_urls = $stripped =~ s/$RE{URI}{HTTP}{-scheme => 'https'}//g;
@@ -1098,7 +1098,7 @@ event cmd_post => sub {
 
     my $status = $self->twitter(update => $text) || return;
 
-    $self->log->debug("    update returned $status");
+    $self->log->trace("    update returned $status");
 };
 
 =item follow I<id>
@@ -1186,17 +1186,17 @@ description.
 event cmd_whois => sub {
     my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
-    $self->log->debug("[cmd_whois] $id");
+    $self->log->trace("[cmd_whois] $id");
 
     my $user = $self->get_user_by_nick($id);
     unless ( $user ) {
-        $self->log->debug("     $id not in users; fetching");
+        $self->log->trace("     $id not in users; fetching");
         my $arg = Email::Valid->address($id) ? { email => $id } : { id => $id };
         $user = $self->twitter(show_user => $arg) || return;
     }
     if ( $user ) {
         $self->bot_says(
-            $channel, 
+            $channel,
             sprintf('%s [%s]: %s, %s', @{$user}{qw/screen_name id name location description url/})
         );
     }
@@ -1244,7 +1244,7 @@ event cmd_favorite => sub {
     my ($nick, $count) = split /\s+/, $args;
     $count ||= $self->favorites_count;
 
-    $self->log->debug("[cmd_favorite] $nick");
+    $self->log->trace("[cmd_favorite] $nick");
 
     my $recent = $self->twitter(user_timeline => { screen_name => $nick, count => $count }) || return;
     if ( @$recent == 0 ) {
@@ -1266,7 +1266,7 @@ event cmd_favorite => sub {
 sub _handle_favorite {
     my ($self, $channel, $index) = @_;
 
-    $self->log->debug("[handle_favorite] $index");
+    $self->log->trace("[handle_favorite] $index");
 
     my @candidates = @{$self->stash->{candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {

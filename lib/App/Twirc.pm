@@ -4,6 +4,7 @@ use Config::Any;
 use POE::Component::Server::Twirc;
 use Proc::Daemon;
 use Path::Class::File;
+use Log::Log4perl qw/:easy/;
 
 with 'MooseX::Getopt',
      'MooseX::Log::Log4perl::Easy';
@@ -34,7 +35,10 @@ sub run {
     my $config = Config::Any->load_files({ files => [ $file ], use_ext => 1 });
     $config = $config->[0]{$file};
 
-    Log::Log4perl->easy_init({ layout => '%d{HH:mm:ss} [%p] %m%n' });
+    Log::Log4perl->easy_init({
+        layout => '%d{HH:mm:ss} [%p] %m%n',
+        level  => eval "\$$config->{log_level}" || $WARN,
+    });
 
     # Hack! Make sure state_file is absolute before we background (which does a cd /).
     $config->{state_file} = Path::Class::File->new($config->{state_file})->absolute->stringify
