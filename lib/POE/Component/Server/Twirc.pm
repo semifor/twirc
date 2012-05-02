@@ -465,18 +465,39 @@ sub connect_twitter_stream {
             $self->yield(friends_ids => shift);
         },
         on_event     => sub {
-            $self->yield(on_event => @_);
+            my $msg = shift;
+
+            $self->log->trace("on_event: $$msg{event}");
+            $self->yield(on_event => $msg);
         },
         on_tweet     => sub {
             my $msg = shift;
 
-            $self->log->debug("on_tweet");
+            $self->log->trace("on_tweet");
 
-            if ( my $dm = delete $$msg{direct_message} ) {
-                $self->yield(on_direct_message => $dm);
+            if ( exists $$msg{sender} ) {
+                $self->log->debug('received old style direct_message');
+                $self->yield(on_direct_message => $msg);
+            }
+            elsif ( exists $$msg{text} ) {
+                $self->yield(on_tweet => $msg);
+            }
+            elsif ( exists $$msg{direct_message} ) {
+                $self->yield(on_direct_message => $$msg{direct_message});
+            }
+            elsif ( exists $$msg{limit} ) {
+                $self->log->warn("track limit: $$msg{limit}{track}");
+                $self->bot_notice($self->irc_channel,
+                    "Track limit received - $$msg{limit}{track} statuses missed.");
+            }
+            elsif ( exists $$msg{scrub_geo} ) {
+                # $$msg{scrub_geo} = {"user_id":14090452,"user_id_str":"14090452","up_to_status_id":23260136625,"up_to_status_id_str":"23260136625"}
+                my $e = $$msg{scrub_geo};
+                $self->log->info("scrub_geo: user_id=$$e{user_id}, up_to_status_id=$$e{up_to_status_id}");
             }
             else {
-                $self->yield(display_status => $msg);
+                $self->log->error("unexpected message: ", JSON->new->pretty($msg));
+                $self->bot_notice($self->irc_channel, "Unexpected twitter packet, see the log for details");
             }
         },
         on_delete    => sub {
@@ -927,7 +948,7 @@ event friends_ids => sub {
     $self->yield('get_followers_ids');
 };
 
-event display_status => sub {
+event on_tweet => sub {
     my ( $self, $status ) = @_[OBJECT, ARG0];
 
     my $text = $self->formatted_status_text($status);
@@ -944,24 +965,27 @@ event display_status => sub {
 event on_event => sub {
     my ( $self, $msg ) = @_[OBJECT, ARG0];
 
-    if ( my $event = $$msg{event} ) {
-        my $method = "on_event_$event";
-        return $self->$method($msg) if $self->can($method);
+    ## Potential events:
+    # retweet user_update
+    # follow unfollow
+    # favorite unfavorite
+    # block unblock
+    # list_created list_updated list_destroyed
+    # list_member_added list_member_removed
+    # list_user_subscribed list_user_unsubscribed
 
-        $self->bot_says($self->irc_channel, "Unhandled Twitter stream event: $event");
-        $self->log->warn("unhandled event", JSON->new->pretty->encode($msg));
-    }
-    else {
-        $self->log->warn("on_event contains no 'event': ", JSON->new->pretty->encode($msg));
-        $self->bot_says($self->irc_channel, "Twitter stream on_event with no 'event' tag");
-    }
+    my $method = "on_event_$$msg{event}";
+    return $self->$method($msg) if $self->can($method);
+
+    $self->bot_notice($self->irc_channel, "Unhandled Twitter stream event: $$msg{event}");
+    $self->log->debug("unhandled event", JSON->new->pretty->encode($msg));
 };
 
 sub on_event_follow {
-    my ( $self, $msg ) = @_;
+    my ( $self, $event ) = @_;
 
-    if ( my $source = $$msg{source} ) {
-        my $target = $$msg{target} || return;
+    if ( my $source = $$event{source} ) {
+        my $target = $$event{target} || return;
 
         # new friend
         if ( $$source{screen_name} eq $self->twitter_screen_name ) {
@@ -979,12 +1003,12 @@ sub on_event_follow {
 }
 
 sub on_event_favorite {
-    my ( $self, $msg ) = @_;
+    my ( $self, $event ) = @_;
 
-    my $status = $$msg{target_object};
+    my $status = $$event{target_object};
 
-    my $who = $$msg{source}{screen_name};
-    $who = "you" if $who eq $self->twitter_screen_name;
+    my $who = $$event{source}{screen_name};
+    $who = "You" if $who eq $self->twitter_screen_name;
 
     my $target_screen_name = $$status{user}{screen_name};
     $target_screen_name = $target_screen_name eq $self->twitter_screen_name
@@ -994,6 +1018,29 @@ sub on_event_favorite {
     my $text = $self->formatted_status_text($status);
     $self->bot_notice($self->irc_channel,
         elide("$who favorited $target_screen_name: $text", 80) . "[$link]");
+}
+
+sub on_event_block {
+    my ( $self, $event ) = @_;
+
+    my $target = $$event{target};
+    if ( $self->get_user_by_id($$target{id}) ) {
+        $self->post_ircd(daemon_cmd_mode =>
+            $self->irc_botname, $self->irc_channel, '-v', $$target{screen_name});
+        $self->remove_follower_id($$target{id});
+    }
+    $self->bot_notice($self->irc_channel, qq/You blocked $$target{screen_name}./);
+}
+
+sub on_event_unblock {
+    my ( $self, $event ) = @_;
+
+    my $target = $$event{target};
+    if ( $self->get_user_by_id($$target{id}) ) {
+        $self->post_ircd(daemon_cmd_mode =>
+            $self->irc_botname, $self->irc_channel, '+v', $$target{screen_name});
+    }
+    $self->bot_notice($self->irc_channel, qq/You unblocked $$target{screen_name}./);
 }
 
 event on_direct_message => sub {
@@ -1109,13 +1156,7 @@ event cmd_block => sub {
         return;
     }
 
-    $self->twitter(create_block => $id) || return;
-
-    if ( $self->get_user_by_nick($id) ) {
-        $self->post_ircd(daemon_cmd_mode =>
-            $self->irc_botname, $self->irc_channel, '-v', $id);
-        $self->bot_notice($channel, qq/Blocked $id./);
-    }
+    $self->twitter(create_block => { screen_name => $id });
 };
 
 =item unblock I<id>
@@ -1125,20 +1166,14 @@ Stop blocking Twitter user I<id>.
 =cut
 
 event cmd_unblock => sub {
-    my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
+    my ( $self, $channel, $id ) = @_[OBJECT, ARG0, ARG1];
 
     if ( $id !~ /^\w+$/ ) {
-        $self->bot_says($channel, qq/"$id" doesn't look like a user ID to me./);
+        $self->bot_says($self->irc_channel, qq/"$id" doesn't look like a Twitter screen name to me./);
         return;
     }
 
-    $self->twitter(destroy_block => $id) || return;
-
-    if ( $self->get_user_by_nick($id) ) {
-        $self->post_ircd(daemon_cmd_mode =>
-            $self->irc_botname, $self->irc_channel, '+v', $id);
-        $self->bot_notice($channel, qq/Unblocked $id./);
-    }
+    $self->twitter(destroy_block => { screen_name => $id});
 };
 
 =item whois I<id>
