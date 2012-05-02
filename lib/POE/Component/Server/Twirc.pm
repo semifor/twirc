@@ -304,6 +304,7 @@ sub twitter {
 
     my $r = try { $self->_twitter->$method(@args) }
     catch {
+        $self->log->error("twitter errer: $_");
         if ( blessed $_ && $_->can('code') && $_->code == 502 ) {
             $_ = 'Fail Whale';
         }
@@ -1141,16 +1142,16 @@ description.
 =cut
 
 event cmd_whois => sub {
-    my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
+    my ($self, $channel, $nick) = @_[OBJECT, ARG0, ARG1];
 
-    $self->log->trace("[cmd_whois] $id");
+    $self->log->trace("[cmd_whois] $nick");
 
-    my $user = $self->get_user_by_nick($id);
+    my $user = $self->get_user_by_nick($nick);
     unless ( $user ) {
-        $self->log->trace("     $id not in users; fetching");
-        my $arg = Email::Valid->address($id) ? { email => $id } : { id => $id };
-        $user = $self->twitter(show_user => $arg) || return;
+        $self->log->trace("     $nick not in users; fetching");
+        $user = $self->twitter(show_user => { screen_name => $nick });
     }
+
     if ( $user ) {
         $self->bot_says(
             $channel,
@@ -1158,7 +1159,7 @@ event cmd_whois => sub {
         );
     }
     else {
-        $self->bot_says($channel, "I don't know $id.");
+        $self->bot_says($channel, "I don't know $nick.");
     }
 };
 
