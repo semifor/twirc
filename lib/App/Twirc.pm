@@ -14,7 +14,6 @@ has configfile => (
     cmd_aliases => 'c',
     isa         => 'Str',
     is          => 'ro',
-    required    => 1,
 );
 
 has background => (
@@ -24,33 +23,38 @@ has background => (
     is          => 'ro',
 );
 
-has authenticate => metaclass => 'Getopt', cmd_aliases => [qw/a auth/], isa => 'Bool', is => 'ro', default => 0;
+has authenticate => (
+    metaclass   => 'Getopt',
+    cmd_aliases => [qw/a auth/],
+    isa         => 'Bool',
+    is          => 'ro',
+    default     => 0
+);
 
 sub run {
     my $self = shift;
 
-    my $file = $self->configfile;
-    die "a configuration (option --configifle) is required\n" unless $file;
-
-    my $config = Config::Any->load_files({ files => [ $file ], use_ext => 1 });
-    $config = $config->[0]{$file};
+    my $config;
+    if ( my $file = $self->configfile ) {
+        $config = Config::Any->load_files({ files => [ $file ], use_ext => 1 });
+        $config = $config->[0]{$file};
+    }
 
     Log::Log4perl->easy_init({
         layout => '%d{HH:mm:ss} [%p] %m%n',
-        level  => eval "\$$config->{log_level}" || $WARN,
+        level  => $$config{log_level} && eval "\$$$config{log_level}" || $WARN,
     });
 
     # Hack! Make sure state_file is absolute before we background (which does a cd /).
-    $config->{state_file} = Path::Class::File->new($config->{state_file})->absolute->stringify
-        if $config->{state_file};
+    $$config{state_file} = Path::Class::File->new($config->{state_file})->absolute->stringify
+        if $$config{state_file};
 
-    if ( $self->authenticate ) {
-        # blood hack until Twitter restores xauth
-        die "state file required" unless $config->{state_file};
+    my $state = $$config{state_file} && -r $$config{state_file}
+              ? POE::Component::Server::Twirc::State->load($$config{state_file})
+              : POE::Component::Server::Twirc::State->new;
 
-        my $state = -r $config->{state_file}
-                  ? POE::Component::Server::Twirc::State->load($config->{state_file})
-                  : POE::Component::Server::Twirc::State->new;
+    if ( $self->authenticate || !$state->access_token ) {
+        # bloody hack until Twitter restores xauth
 
         my $nt = Net::Twitter->new(traits => [qw/OAuth/], POE::Component::Server::Twirc->_twitter_auth);
         print "Authorize twirc at ", $nt->get_authorization_url, "\nThen, enter the PIN# provided: ";
@@ -62,9 +66,7 @@ sub run {
         $state->access_token($token);
         $state->access_token_secret($secret);
 
-        $state->store($config->{state_file});
-
-        return;
+        $state->store($$config{state_file}) if $$config{state_file};
     }
 
     if ( $self->background ) {
@@ -77,7 +79,7 @@ sub run {
     }
 
     $config->{plugins} = $self->_init_plugins($config);
-    POE::Component::Server::Twirc->new($config);
+    POE::Component::Server::Twirc->new(%{$config || {}}, state => $state);
     POE::Kernel->run;
 }
 

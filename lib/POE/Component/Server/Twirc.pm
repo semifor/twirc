@@ -31,8 +31,6 @@ POE::Component::Server::Twirc - Twitter/IRC gateway
 
     POE::Component::Server::Twirc->new(
         irc_nickname        => $my_irc_nickname,
-        twitter_username    => $my_twitter_username,
-        twitter_password    => $my_twitter_password,
         twitter_screen_name => $my_twitter_screen_name,
     );
 
@@ -65,23 +63,7 @@ Arguments:
 
 =cut
 
-has irc_nickname        => ( isa => 'Str', is => 'ro', required => 1 );
-
-=item twitter_username
-
-(Required) The username (email address) used to authenticate with Twitter.
-
-=cut
-
-has twitter_username    => ( isa => 'Str', is => 'ro', required => 1 );
-
-=item twitter_password
-
-(Required) The password used to authenticate with Twitter.
-
-=cut
-
-has twitter_password    => ( isa => 'Str', is => 'ro', required => 1 );
+has irc_nickname        => ( isa => 'Str', is => 'rw' );
 
 =item twitter_screen_name
 
@@ -115,7 +97,7 @@ has irc_server_port     => ( isa => 'Int', is => 'ro', default => 6667 );
 =cut
 
 # will be defaulted to INADDR_ANY by POE::Wheel::SocketFactory
-has irc_server_bindaddr => ( isa => 'Str', is => 'ro', default => '' );
+has irc_server_bindaddr => ( isa => 'Str', is => 'ro', default => '127.0.0.1' );
 
 =item irc_mask
 
@@ -304,8 +286,7 @@ has _stash => (
         clearer   => 'clear_stash',
 );
 
-has _state => (
-        accessor => 'state',
+has state => (
         isa      => 'POE::Component::Server::Twirc::State',
         is       => 'rw',
         builder  => '_build_state',
@@ -566,31 +547,18 @@ sub START {
         $logger->add_appender($appender);
     }
 
-    if ( $self->state_file && -r $self->state_file ) {
-        try {
-            $self->state(POE::Component::Server::Twirc::State->load($self->state_file))
-        }
-        catch {
-            s/ at .*//s;
-            $self->log->error($_);
-        };
-    }
-
-    $self->state->access_token && $self->state->access_token_secret || $self->xauth;
-
     $self->_twitter(Net::Twitter->new(
-        $self->_net_twitter_opts()
+        $self->_net_twitter_opts,
+        access_token        => $self->state->access_token,
+        access_token_secret => $self->state->access_token_secret,
     ));
-
-    $self->_twitter->access_token($self->state->access_token);
-    $self->_twitter->access_token_secret($self->state->access_token_secret);
 
     POE::Kernel->sig(TERM => 'poco_shutdown');
     POE::Kernel->sig(INT  => 'poco_shutdown');
 
     $self->connect_twitter_stream;
 
-    $self->yield('get_topic');
+    $self->yield('get_authenticated_user');
 
     return $self;
 }
@@ -661,7 +629,7 @@ event poco_shutdown => sub {
     exit 0;
 };
 
-event get_topic => sub {
+event get_authenticated_user => sub {
     my $self = $_[OBJECT];
 
     if ( my $r = $self->twitter(verify_credentials => { include_entities => 1 }) ) {
@@ -670,6 +638,10 @@ event get_topic => sub {
             $$status{user} = $r;
             $self->set_topic($self->formatted_status_text($status));
         }
+    }
+    else {
+        $self->log->fatal("Failed to get authenticated user data from twitter (verify_credentials)");
+        $self->call('poco_shutdown');
     }
 };
 
@@ -686,6 +658,8 @@ event ircd_daemon_nick => sub {
     return unless defined $_[ARG2];
 
     return if $nick eq $self->irc_botname;
+
+    $self->irc_nickname($nick);
 
     # Abuse!  Calling the private implementation of ircd to force-join the connecting
     # user to the twitter channel. ircd set's it's heap to $self: see ircd's perldoc.
