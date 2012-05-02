@@ -12,6 +12,7 @@ use POE::Component::Server::Twirc::State;
 use Encode qw/decode/;
 use Try::Tiny;
 use Scalar::Util qw/reftype/;
+use AnyEvent;
 use AnyEvent::Twitter::Stream;
 use HTML::Entities;
 use Regexp::Common qw/URI/;
@@ -432,6 +433,7 @@ sub _net_twitter_opts {
     return %config;
 }
 
+has reconnect_delay => is => 'rw', isa => 'Num', default => 0;
 has twitter_stream_watcher => is => 'rw', clearer => 'disconnect_twitter_stream',
         predicate => 'has_twitter_stream_watcher';
 
@@ -446,6 +448,7 @@ sub connect_twitter_stream {
         on_connect   => sub {
             $self->twitter_stream_watcher($w);
             $self->log->info('Connected to Twitter');
+            $self->reconnect_delay(0);
         },
         on_eof       => sub {
             $self->log->trace("on_eof");
@@ -456,6 +459,15 @@ sub connect_twitter_stream {
             my $e = shift;
             $self->log->error("on_error: $e");
             $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
+            if ( $e =~ /^420:/ ) {
+                # excessive login rate
+                $self->reconnect_delay(60) if $self->reconnect_delay < 60;
+            }
+            my $t; $t = AE::timer $self->reconnect_delay, 0, sub {
+                $self->reconnect_delay($self->reconnect_delay * 2 || 1);
+                $self->connect_twitter_stream;
+                undef $t;
+            };
         },
         on_keepalive   => sub {
             $self->log->trace("on_keepalive");
