@@ -460,9 +460,11 @@ sub connect_twitter_stream {
             $self->log->error("on_error: $e");
             $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
             if ( $e =~ /^420:/ ) {
-                # excessive login rate
-                $self->reconnect_delay(60) if $self->reconnect_delay < 60;
+                $self->log->error("excessive login rate; shutting down");
+                $self->call('poco_shutdown');
             }
+
+            # progressively backoff on reconnection attepts
             my $t; $t = AE::timer $self->reconnect_delay, 0, sub {
                 $self->reconnect_delay($self->reconnect_delay * 2 || 1);
                 $self->connect_twitter_stream;
