@@ -1014,8 +1014,11 @@ sub on_event_follow {
     }
 }
 
-sub on_event_favorite {
-    my ( $self, $event ) = @_;
+sub on_event_favorite   { shift->_favorite_or_retweet(favorited   => @_) }
+sub on_event_unfavorite { shift->_favorite_or_retweet(unfavorited => @_) }
+sub on_event_retweet    { shift->_favorite_or_retweet(retweeted   => @_) }
+sub _favorite_or_retweet {
+    my ( $self, $action, $event ) = @_;
 
     my $status = $$event{target_object};
 
@@ -1029,7 +1032,7 @@ sub on_event_favorite {
     my $link = "https://twitter.com/$$status{user}{screen_name}/status/$$status{id}";
     my $text = $self->formatted_status_text($status);
     $self->bot_notice($self->irc_channel,
-        elide("$who favorited $target_screen_name: $text", 80) . "[$link]");
+        elide("$who $action $target_screen_name: $text", 80) . "[$link]");
 }
 
 sub on_event_block {
