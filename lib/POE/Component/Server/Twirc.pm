@@ -572,40 +572,6 @@ event _child => sub {
     $kernel->detach_child($child) if $event eq 'create';
 };
 
-sub xauth {
-    my $self = shift;
-
-    # LWP::UserAgent::POE doesn't handle SSL, so we need a blocking UA
-    my $nt = Net::Twitter->new(
-        $self->_net_twitter_opts,
-        useragent_class => 'LWP::UserAgent',
-    );
-
-    my ($token, $secret, $user_id, $screen_name) = try {
-        $nt->xauth($self->twitter_username, $self->twitter_password);
-    }
-    catch {
-        if ( /401 Unauthorize/ ) {
-            die "Twitter login failed. Check your username and password.\n";
-        }
-
-        die "Twitter login failed: $_\n";
-    };
-
-    $self->twitter_screen_name($screen_name);
-
-    $self->state->access_token($token);
-    $self->state->access_token_secret($secret);
-    if ( $self->state_file ) {
-        try { $self->state->store($self->state_file) }
-        catch {
-            s/ at .*//s;
-            $self->log->error($_);
-            $self->bot_notice($self->irc_channel, "Error storing state file: $_");
-        };
-    }
-};
-
 event poco_shutdown => sub {
     my ($self) = @_;
 
