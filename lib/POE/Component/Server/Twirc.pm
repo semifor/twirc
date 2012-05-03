@@ -30,7 +30,6 @@ POE::Component::Server::Twirc - Twitter/IRC gateway
     use POE::Component::Server::Twirc;
 
     POE::Component::Server::Twirc->new(
-        irc_nickname        => $my_irc_nickname,
         twitter_screen_name => $my_twitter_screen_name,
     );
 
@@ -232,9 +231,18 @@ has plugins => ( isa => 'ArrayRef[Object]', is => 'ro', default => sub { [] } );
 
 =cut
 
-has _ircd => (
+has _twitter => is => 'rw', isa => 'Object', lazy => 1, default => sub {
+    my $self = shift;
+
+    Net::Twitter->new(
+        $self->_net_twitter_opts,
+        access_token        => $self->state->access_token,
+        access_token_secret => $self->state->access_token_secret,
+    );
+};
+
+has ircd => (
        accessor => 'ircd', isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1 );
-has _twitter => ( isa => 'Net::Twitter', is => 'rw' );
 has _users_by_nick => (
     traits => [qw/Hash/],
     isa => 'HashRef[HashRef|Object]',
@@ -298,6 +306,22 @@ sub _build_state { POE::Component::Server::Twirc::State->new }
 has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
 
 has client_encoding => ( isa => 'Str', is  => 'rw', default => sub { 'utf-8' } );
+
+sub get_authenticated_user {
+    my $self = shift;
+
+    if ( my $r = $self->twitter(verify_credentials => { include_entities => 1 }) ) {
+        $self->twitter_screen_name($$r{screen_name});
+        if ( my $status = delete $$r{status} ) {
+            $$status{user} = $r;
+            $self->set_topic($self->formatted_status_text($status));
+        }
+    }
+    else {
+        $self->log->fatal("Failed to get authenticated user data from twitter (verify_credentials)");
+        $self->call('poco_shutdown');
+    }
+};
 
 sub twitter {
     my ($self, $method, @args) = @_;
@@ -528,10 +552,10 @@ sub START {
                                      bindaddr => $self->irc_server_bindaddr);
 
     # add super user
-    $self->post_ircd(
-        add_spoofed_nick =>
-        { nick => $self->irc_botname, ircname => $self->irc_botircname }
-    );
+    $self->post_ircd(add_spoofed_nick => {
+        nick    => $self->irc_botname,
+        ircname => $self->irc_botircname,
+    });
     $self->post_ircd(daemon_cmd_join => $self->irc_botname, $self->irc_channel);
 
     # logging
@@ -548,18 +572,11 @@ sub START {
         $logger->add_appender($appender);
     }
 
-    $self->_twitter(Net::Twitter->new(
-        $self->_net_twitter_opts,
-        access_token        => $self->state->access_token,
-        access_token_secret => $self->state->access_token_secret,
-    ));
-
     POE::Kernel->sig(TERM => 'poco_shutdown');
     POE::Kernel->sig(INT  => 'poco_shutdown');
 
+    $self->get_authenticated_user;
     $self->connect_twitter_stream;
-
-    $self->yield('get_authenticated_user');
 
     return $self;
 }
@@ -596,22 +613,6 @@ event poco_shutdown => sub {
     exit 0;
 };
 
-event get_authenticated_user => sub {
-    my $self = $_[OBJECT];
-
-    if ( my $r = $self->twitter(verify_credentials => { include_entities => 1 }) ) {
-        $self->twitter_screen_name($$r{screen_name});
-        if ( my $status = delete $$r{status} ) {
-            $$status{user} = $r;
-            $self->set_topic($self->formatted_status_text($status));
-        }
-    }
-    else {
-        $self->log->fatal("Failed to get authenticated user data from twitter (verify_credentials)");
-        $self->call('poco_shutdown');
-    }
-};
-
 ########################################################################
 # IRC events
 ########################################################################
@@ -623,14 +624,15 @@ event ircd_daemon_nick => sub {
 
     # if it's a nick change, we only get ARG0 and ARG1
     return unless defined $_[ARG2];
-
-    return if $nick eq $self->irc_botname;
-
     $self->irc_nickname($nick);
+    return if $self->ircd->_state_user_route($nick) eq 'spoofed';
 
     # Abuse!  Calling the private implementation of ircd to force-join the connecting
     # user to the twitter channel. ircd set's it's heap to $self: see ircd's perldoc.
-    $sender->get_heap()->_daemon_cmd_join($nick, $self->irc_channel);
+    $sender->get_heap->_daemon_cmd_join($nick, $self->irc_channel);
+
+    # Give the user half ops (just a visual cue)
+    $self->post_ircd(daemon_cmd_mode => $self->irc_botname, $self->irc_channel, '+h', $nick);
 };
 
 event ircd_daemon_join => sub {
@@ -890,7 +892,7 @@ event friends_ids => sub {
         if ( !$friend || $self->is_friend_stale($friend) ) {
             push @$buffer, $id;
             if ( @$buffer == 100 ) {
-                $self->yield(lookup_friends => $buffer);
+                $self->call(lookup_friends => $buffer);
                 $buffer = [];
             }
         }
@@ -920,11 +922,16 @@ event on_tweet => sub {
 event on_event => sub {
     my ( $self, $msg ) = @_[OBJECT, ARG0];
 
-    ## Potential events:
-    # retweet user_update
+    ### Potential events:
+    #
+    ## implemented:
+    # retweet
     # follow unfollow
-    # favorite unfavorite
     # block unblock
+    # favorite unfavorite
+    #
+    ## unimplemented:
+    # user_update
     # list_created list_updated list_destroyed
     # list_member_added list_member_removed
     # list_user_subscribed list_user_unsubscribed
