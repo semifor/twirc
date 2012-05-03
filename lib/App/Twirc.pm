@@ -31,6 +31,22 @@ has authenticate => (
     default     => 0
 );
 
+has state_file => (
+    metaclass   => 'Getopt',
+    cmd_aliases => 's',
+    isa         => 'Str',
+    is          => 'ro',
+    predicate   => 'has_state_file',
+);
+
+has debug => (
+    metaclass   => 'Getopt',
+    cmd_aliases => 'd',
+    isa         => 'Bool',
+    is          => 'ro',
+    default     => 0,
+);
+
 sub run {
     my $self = shift;
 
@@ -40,12 +56,16 @@ sub run {
         $config = $config->[0]{$file};
     }
 
+    # override/provide config options from the commandline
+    $$config{state_file} = $self->state_file if $self->has_state_file;
+    $$config{log_level}  = 'DEBUG'           if $self->debug;
+
     Log::Log4perl->easy_init({
         layout => '%d{HH:mm:ss} [%p] %m%n',
         level  => $$config{log_level} && eval "\$$$config{log_level}" || $WARN,
     });
 
-    # Hack! Make sure state_file is absolute before we background (which does a cd /).
+    # Make sure state_file is absolute before we background (which does a cd /).
     $$config{state_file} = Path::Class::File->new($config->{state_file})->absolute->stringify
         if $$config{state_file};
 
