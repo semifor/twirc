@@ -862,7 +862,9 @@ sub formatted_status_text {
 
     decode_entities($text);
 
-    $text = "RT \@$$s{user}{screen_name}: $text" if $is_retweet;
+    # When the status is a retweet from verify_credentials, it doesn't have a user element
+    my $orig_author = $$s{user}{screen_name} || $$status{entities}{user_mentions}[0]{screen_name};
+    $text = "RT \@$orig_author: $text" if $is_retweet;
 
     return $text;
 }
