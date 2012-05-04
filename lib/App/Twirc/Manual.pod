@@ -455,7 +455,7 @@ compatible, like Identi.ca) accounts.  See L<App::Twirc::Plugin::SecondaryAccoun
 
 C<Twirc> is free open source software with no warranty of any kind.  That said,
 it's used by some competent perl coders who may be able to help if you have
-trouble.  Try the #twirc channel at C<irc.perl.org>.
+trouble.  Try the #net-twitter channel at C<irc.perl.org>.
 
 The code repository with the development branch is located at
 L<http://github.com/semifor/twirc>.  New features, and bug fixes appear there
