@@ -144,16 +144,6 @@ has irc_botircname      => ( isa => 'Str', is => 'ro', default => 'Your friendly
 has irc_channel         => ( isa => 'Str', is => 'ro', default => '&twitter' );
 
 
-=item twitter_alias
-
-(Optional) An alias to use for displaying incoming status updates from the owning user.
-This is necessary if the user's IRC nickname and Twitter screen name are the
-same.  Defaults to C<me>.
-
-=cut
-
-has twitter_alias       => ( isa => 'Str', is => 'ro', default => 'me' );
-
 =item twitter_args
 
 (Optional) A hashref of extra arguments to pass to C<< Net::Twitter->new >>.
@@ -640,9 +630,7 @@ event ircd_daemon_join => sub {
 
     $self->log->trace("[ircd_daemon_join] $user, $ch");
     return unless my($nick) = $user =~ /^([^!]+)!/;
-    return if $self->get_user_by_nick($nick);
-    return if $nick eq $self->irc_botname;
-    return if $nick eq $self->twitter_alias;
+    return if $self->ircd->_state_user_route($nick) eq 'spoofed';
 
     if ( $ch eq $self->irc_channel ) {
         $self->joined(1);
@@ -911,7 +899,6 @@ event on_tweet => sub {
     my $text = $self->formatted_status_text($status);
     my $name = $$status{user}{screen_name};
     if ( $name eq $self->irc_nickname ) {
-        $name = $self->twitter_alias;
         $self->set_topic($text);
     }
 
@@ -1017,7 +1004,6 @@ event on_direct_message => sub {
     }
 
     my $name = $$msg{sender_screen_name};
-    $name = $self->twitter_alias if $name eq $self->irc_nickname;
 
     my $sender = $$msg{sender};
     $self->post_ircd(add_spoofed_nick => { nick => $$sender{screen_name}, ircname => $$sender{name} });
