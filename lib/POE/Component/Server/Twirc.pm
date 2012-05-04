@@ -963,21 +963,15 @@ sub on_event_favorite   { shift->_favorite_or_retweet(favorited   => @_) }
 sub on_event_unfavorite { shift->_favorite_or_retweet(unfavorited => @_) }
 sub on_event_retweet    { shift->_favorite_or_retweet(retweeted   => @_) }
 sub _favorite_or_retweet {
-    my ( $self, $action, $event ) = @_;
+    my ( $self, $verb, $event ) = @_;
 
     my $status = $$event{target_object};
-
-    my $who = $$event{source}{screen_name};
-    $who = "You" if $who eq $self->twitter_screen_name;
-
-    my $target_screen_name = $$status{user}{screen_name};
-    $target_screen_name = $target_screen_name eq $self->twitter_screen_name
-        ? 'your' : "\@$target_screen_name";
-
+    my $who  = $$event{source}{id} eq $self->twitter_id ? 'You'  : $$event{source}{screen_name};
+    my $whom = $$event{target}{id} eq $self->twitter_id ? 'your' : "$$event{target}{screen_name}'s";
     my $link = "https://twitter.com/$$status{user}{screen_name}/status/$$status{id}";
     my $text = $self->formatted_status_text($status);
-    $self->bot_notice($self->irc_channel,
-        elide("$who $action $target_screen_name: $text", 80) . "[$link]");
+
+    $self->bot_notice($self->irc_channel, elide(qq/$who $verb $whom "$text"/, 80) . " [$link]");
 }
 
 sub on_event_block {
@@ -1001,6 +995,19 @@ sub on_event_unblock {
             $self->irc_botname, $self->irc_channel, '+v', $$target{screen_name});
     }
     $self->bot_notice($self->irc_channel, qq/You unblocked $$target{screen_name}./);
+}
+
+sub on_event_list_member_added   { shift->_list_add_or_remove(qw/added to/,     @_) }
+sub on_event_list_member_removed { shift->_list_add_or_remove(qw/removed from/, @_) }
+sub _list_add_or_remove {
+    my ( $self, $verb, $preposition, $event ) = @_;
+
+    my $list = $$event{target_object};
+    my $who  = $$event{source}{id} eq $self->twitter_id ? 'You' : $$event{source}{screen_name};
+    my $whom = $$event{target}{id} eq $self->twitter_id ? 'you' : $$event{target}{screen_name};
+    my $link = "https://twitter.com$$list{uri}";
+
+    $self->bot_notice($self->irc_channel, "$who $verb $whom $preposition list [$$list{name}]($link)");
 }
 
 event on_direct_message => sub {
