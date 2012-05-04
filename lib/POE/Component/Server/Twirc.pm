@@ -614,8 +614,9 @@ event ircd_daemon_nick => sub {
 
     # if it's a nick change, we only get ARG0 and ARG1
     return unless defined $_[ARG2];
-    $self->irc_nickname($nick);
     return if $self->ircd->_state_user_route($nick) eq 'spoofed';
+
+    $self->irc_nickname($nick);
 
     # Abuse!  Calling the private implementation of ircd to force-join the connecting
     # user to the twitter channel. ircd set's it's heap to $self: see ircd's perldoc.
