@@ -900,13 +900,22 @@ event on_tweet => sub {
     my ( $self, $status ) = @_[OBJECT, ARG0];
 
     my $text = $self->formatted_status_text($status);
-    my $name = $$status{user}{screen_name};
-    if ( $name eq $self->irc_nickname ) {
+    my $nick = $$status{user}{screen_name};
+    if ( $nick eq $self->irc_nickname ) {
         $self->set_topic($text);
     }
 
-    $self->log->trace("on_tweet: <$name> $text");
-    $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_channel, $_) for split /[\r\n]+/, $text;
+    unless ( $self->ircd->state_nick_exists($nick) ) {
+        $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $$status{user}{name} });
+        $self->add_user($$status{user});
+    }
+
+    unless ( $self->ircd->state_is_chan_member($nick, $self->irc_channel) ) {
+        $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
+    }
+
+    $self->log->trace("on_tweet: <$nick> $text");
+    $self->post_ircd(daemon_cmd_privmsg => $nick, $self->irc_channel, $_) for split /[\r\n]+/, $text;
 };
 
 event on_event => sub {
@@ -1006,12 +1015,18 @@ event on_direct_message => sub {
         return;
     }
 
-    my $name = $$msg{sender_screen_name};
-
+    my $nick = $$msg{sender_screen_name};
     my $sender = $$msg{sender};
-    $self->post_ircd(add_spoofed_nick => { nick => $$sender{screen_name}, ircname => $$sender{name} });
+
+    unless ( $self->ircd->state_nick_exists($nick) ) {
+        # This shouldn't happen - twitter only allows direct messages to followers, so
+        # we *should* already have $nick on board.
+        $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $$sender{name} });
+        $self->add_user($sender);
+    }
+
     my $text = $self->formatted_status_text($msg);
-    $self->post_ircd(daemon_cmd_privmsg => $name, $self->irc_nickname, $_)
+    $self->post_ircd(daemon_cmd_privmsg => $nick, $self->irc_nickname, $_)
             for split /\r?\n/, $text;
 };
 
