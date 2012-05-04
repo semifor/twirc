@@ -30,7 +30,6 @@ POE::Component::Server::Twirc - Twitter/IRC gateway
     use POE::Component::Server::Twirc;
 
     POE::Component::Server::Twirc->new(
-        twitter_screen_name => $my_twitter_screen_name,
     );
 
     POE::Kernel->run;
@@ -63,14 +62,6 @@ Arguments:
 =cut
 
 has irc_nickname        => ( isa => 'Str', is => 'rw' );
-
-=item twitter_screen_name
-
-(Required) The user's Twitter screen name.
-
-=cut
-
-has twitter_screen_name => ( isa => 'Str', is => 'rw' );
 
 
 =item irc_server_name
@@ -301,7 +292,7 @@ sub get_authenticated_user {
     my $self = shift;
 
     if ( my $r = $self->twitter(verify_credentials => { include_entities => 1 }) ) {
-        $self->twitter_screen_name($$r{screen_name});
+        $self->authenticated_user($r);
         if ( my $status = delete $$r{status} ) {
             $$status{user} = $r;
             $self->set_topic($self->formatted_status_text($status));
@@ -432,6 +423,11 @@ sub _net_twitter_opts {
 has reconnect_delay => is => 'rw', isa => 'Num', default => 0;
 has twitter_stream_watcher => is => 'rw', clearer => 'disconnect_twitter_stream',
         predicate => 'has_twitter_stream_watcher';
+
+has authenticated_user => is => 'rw', isa => 'HashRef', init_arg => undef;
+
+sub twitter_screen_name { shift->authenticated_user->{screen_name} }
+sub twitter_id          { shift->authenticated_user->{id} }
 
 sub connect_twitter_stream {
     my $self = shift;
@@ -949,13 +945,13 @@ sub on_event_follow {
         my $target = $$event{target} || return;
 
         # new friend
-        if ( $$source{screen_name} eq $self->twitter_screen_name ) {
+        if ( $$source{id} eq $self->twitter_id ) {
             $self->yield(friend_join => $target);
             $self->bot_notice($self->irc_channel, qq/Now following $$target{screen_name}./);
         }
 
         # new follower
-        elsif ( $$target{screen_name} eq $self->twitter_screen_name ) {
+        elsif ( $$target{id} eq $self->twitter_id ) {
             $self->bot_notice($self->irc_channel, qq`\@$$source{screen_name} "$$source{name}" `
                     . qq`is following you https://twitter.com/$$source{screen_name}`);
             $self->add_follower_id($$source{id});
