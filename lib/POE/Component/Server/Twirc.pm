@@ -747,10 +747,7 @@ event ircd_daemon_privmsg => sub {
         return;
     }
 
-    unless ( $self->twitter(new_direct_message => { user => $target_nick, text => $text }) ) {
-        # TODO what channel?
-        $self->bot_says($self->irc_channel, "new_direct_message failed.");
-    }
+    $self->twitter(new_direct_message => { user => $target_nick, text => $text });
 };
 
 sub friends_stale_after () { 7*24*3600 } # 1 week
@@ -1212,9 +1209,7 @@ event cmd_notify => sub {
 
     my $method = $onoff eq 'on' ? 'enable_notifications' : 'disable_notifications';
     for my $nick ( @nicks ) {
-        unless ( $self->twitter($method => { id => $nick }) ) {
-            $self->bot_says($channel, "notify $onoff failed for $nick");
-        }
+        $self->twitter($method => { id => $nick });
     }
 };
 
@@ -1258,9 +1253,7 @@ sub _handle_favorite {
 
     my @candidates = @{$self->stash->{candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
-        if ( $self->twitter(create_favorite => { id => $candidates[$index - 1] }) ) {
-            $self->bot_notice($channel, 'favorite added');
-        }
+        $self->twitter(create_favorite => { id => $candidates[$index - 1] });
         $self->clear_stash;
         return 1; # handled
     }
