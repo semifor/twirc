@@ -222,33 +222,20 @@ has _twitter => is => 'rw', isa => 'Object', lazy => 1, default => sub {
     );
 };
 
-has ircd => (
-       accessor => 'ircd', isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1 );
+has ircd => isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1;
+
 has _users_by_nick => (
-    traits => [qw/Hash/],
-    isa => 'HashRef[HashRef|Object]',
-    is => 'rw',
-    default => sub { {} },
-    handles => {
+    traits   => [qw/Hash/],
+    isa      => 'HashRef[HashRef|Object]',
+    is       => 'rw',
+    init_arg => undef,
+    lazy     => 1,
+    default  => sub { +{ map { lc($$_{screen_name}) => $_ } shift->get_users } },
+    handles  => {
         set_user_by_nick    => 'set',
         get_user_by_nick    => 'get',
-        num_users_by_nick   => 'count',
         delete_user_by_nick => 'delete',
         user_nicks          => 'keys',
-    },
-);
-
-has _users_by_id => (
-    traits => [qw/Hash/],
-    isa => 'HashRef[HashRef|Object]',
-    is  => 'rw',
-    default => sub { {} },
-    handles => {
-        set_user_by_id    => 'set',
-        get_user_by_id    => 'get',
-        delete_user_by_id => 'delete',
-        user_ids          => 'keys',
-        get_users         => 'values',
     },
 );
 
@@ -278,15 +265,17 @@ has _stash => (
 has state => (
         isa      => 'POE::Component::Server::Twirc::State',
         is       => 'rw',
-        builder  => '_build_state',
         lazy     => 1,
+        handles  => [qw/set_user_by_id get_user_by_id delete_user_by_id get_users/],
+        default  => sub { POE::Component::Server::Twirc::State->new },
 );
-
-sub _build_state { POE::Component::Server::Twirc::State->new }
 
 has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
 
 has client_encoding => ( isa => 'Str', is  => 'rw', default => sub { 'utf-8' } );
+
+# force build of users by nick hash early
+sub BUILD { shift->_users_by_nick }
 
 sub get_authenticated_user {
     my $self = shift;
@@ -373,15 +362,16 @@ sub nicks_alternation {
 sub add_user {
     my ($self, $user) = @_;
 
-    $self->set_user_by_nick($user->{screen_name}, $user);
+    $$user{FRESH} = time;
     $self->set_user_by_id($user->{id}, $user);
+    $self->set_user_by_nick(lc($user->{screen_name}), $user);
 }
 
 sub delete_user {
     my ($self, $user) = @_;
 
     $self->delete_user_by_id($user->{id});
-    $self->delete_user_by_nick($user->{screen_name});
+    $self->delete_user_by_nick(lc($user->{screen_name}));
 }
 
 sub _twitter_auth {
@@ -652,7 +642,7 @@ event ircd_daemon_part => sub {
     return unless my($nick) = $user_name =~ /^([^!]+)!/;
     return if $nick eq $self->irc_botname;
 
-    if ( my $user = $self->get_user_by_nick($nick) ) {
+    if ( my $user = $self->get_user_by_nick(lc $nick) ) {
         $self->delete_user($user);
     }
 
@@ -664,7 +654,7 @@ event ircd_daemon_quit => sub {
 
     $self->log->trace("[ircd_daemon_quit]");
     return unless my($nick) = $user =~ /^([^!]+)!/;
-    return if $self->get_user_by_nick($nick);
+    return if $self->get_user_by_nick(lc $nick);
     return if $nick eq $self->irc_botname;
 
     $self->joined(0);
@@ -741,7 +731,7 @@ event ircd_daemon_privmsg => sub {
 
     $text = decode($self->client_encoding, $text);
 
-    unless ( $self->get_user_by_nick($target_nick) ) {
+    unless ( $self->get_user_by_nick(lc $target_nick) ) {
         # TODO: handle the error the way IRC would?? (What channel?)
         $self->bot_says($self->irc_channel, qq/You don't appear to be following $target_nick; message not sent./);
         return;
@@ -751,7 +741,7 @@ event ircd_daemon_privmsg => sub {
 };
 
 sub friends_stale_after () { 7*24*3600 } # 1 week
-sub is_friend_stale {
+sub is_user_stale {
     my ( $self, $user ) = @_;
 
     return time - $user->{FRESH} > $self->friends_stale_after;
@@ -787,7 +777,6 @@ event friend_join => sub {
 
     $self->post_ircd(add_spoofed_nick => { nick => $friend->{screen_name}, ircname => $friend->{name} });
     $self->post_ircd(daemon_cmd_join => $friend->{screen_name}, $self->irc_channel);
-    $self->add_user($friend);
     if ( $self->is_follower_id($$friend{id}) ) {
         $self->post_ircd(daemon_cmd_mode =>
             $self->irc_botname, $self->irc_channel, '+v', $$friend{screen_name});
@@ -803,8 +792,7 @@ event lookup_friends => sub {
     my $r = $self->twitter(lookup_users => { user_id => $ids });
     for my $friend ( @{$r || []} ) {
         delete $friend->{status};
-        $friend->{FRESH} = $fresh;
-        $self->state->friends->{$friend->{id}} = $friend;
+        $self->add_user($friend);
         $self->yield(friend_join => $friend);
     }
 
@@ -869,16 +857,17 @@ sub formatted_status_text {
 ########################################################################
 
 event friends_ids => sub {
-    my ( $self, $friends_ids ) = @_[OBJECT, ARG0];
+    my ( $self, $kernel, $friends_ids ) = @_[OBJECT, KERNEL, ARG0];
 
     my $buffer = [];
     for my $id ( @$friends_ids ) {
-        my $friend = $self->state->friends->{$id};
-        if ( !$friend || $self->is_friend_stale($friend) ) {
+        my $friend = $self->state->twitter_users->{$id};
+        if ( !$friend || $self->is_user_stale($friend) ) {
             push @$buffer, $id;
             if ( @$buffer == 100 ) {
-                $self->call(lookup_friends => $buffer);
+                $self->yield(lookup_friends => [ @$buffer ]);
                 $buffer = [];
+                $kernel->run_one_timeslice;
             }
         }
         else {
@@ -1113,7 +1102,7 @@ friendship.
 event cmd_unfollow => sub {
     my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
-    my $user = $self->get_user_by_nick($id);
+    my $user = $self->get_user_by_nick(lc $id);
     unless ( $user ) {
         $self->bot_says($channel, qq/You don't appear to be following $id./);
         return;
@@ -1173,7 +1162,7 @@ event cmd_whois => sub {
 
     $self->log->trace("[cmd_whois] $nick");
 
-    my $user = $self->get_user_by_nick($nick);
+    my $user = $self->get_user_by_nick(lc $nick);
     unless ( $user ) {
         $self->log->trace("     $nick not in users; fetching");
         $user = $self->twitter(show_user => { screen_name => $nick });
