@@ -54,14 +54,6 @@ Arguments:
 
 =over 4
 
-=item irc_nickname
-
-(Required) The irc nickname used by the owning user.
-
-=cut
-
-has irc_nickname        => ( isa => 'Str', is => 'rw' );
-
 
 =item irc_server_name
 
@@ -69,7 +61,7 @@ has irc_nickname        => ( isa => 'Str', is => 'rw' );
 
 =cut
 
-has irc_server_name     => ( isa => 'Str', is => 'ro', default => 'twitter.irc' );
+has irc_server_name => isa => 'Str', is => 'ro', default => 'twitter.irc';
 
 =item irc_server_port
 
@@ -77,7 +69,7 @@ has irc_server_name     => ( isa => 'Str', is => 'ro', default => 'twitter.irc' 
 
 =cut
 
-has irc_server_port     => ( isa => 'Int', is => 'ro', default => 6667 );
+has irc_server_port => isa => 'Int', is => 'ro', default => 6667;
 
 =item irc_server_bindaddr
 
@@ -86,7 +78,7 @@ has irc_server_port     => ( isa => 'Int', is => 'ro', default => 6667 );
 =cut
 
 # will be defaulted to INADDR_ANY by POE::Wheel::SocketFactory
-has irc_server_bindaddr => ( isa => 'Str', is => 'ro', default => '127.0.0.1' );
+has irc_server_bindaddr => isa => 'Str', is => 'ro', default => '127.0.0.1';
 
 =item irc_mask
 
@@ -94,7 +86,7 @@ has irc_server_bindaddr => ( isa => 'Str', is => 'ro', default => '127.0.0.1' );
 
 =cut
 
-has irc_mask            => ( isa => 'Str', is => 'ro', default => '*@127.0.0.1' );
+has irc_mask => isa => 'Str', is => 'ro', default => '*@127.0.0.1';
 
 
 =item irc_password
@@ -103,7 +95,7 @@ has irc_mask            => ( isa => 'Str', is => 'ro', default => '*@127.0.0.1' 
 
 =cut
 
-has irc_password        => ( isa => 'Str', is => 'ro' );
+has irc_password => isa => 'Str', is => 'ro';
 
 
 =item irc_botname
@@ -113,7 +105,7 @@ that does not conflict with friends, followers, or your own IRC nick.
 
 =cut
 
-has irc_botname         => ( isa => 'Str', is => 'ro', default => 'tweeter' );
+has irc_botname => isa => 'Str', is => 'ro', default => 'tweeter';
 
 
 =item irc_botircname
@@ -122,7 +114,7 @@ has irc_botname         => ( isa => 'Str', is => 'ro', default => 'tweeter' );
 
 =cut
 
-has irc_botircname      => ( isa => 'Str', is => 'ro', default => 'Your friendly Twitter Agent' );
+has irc_botircname => isa => 'Str', is => 'ro', default => 'Your friendly Twitter agent';
 
 
 =item irc_channel
@@ -131,7 +123,7 @@ has irc_botircname      => ( isa => 'Str', is => 'ro', default => 'Your friendly
 
 =cut
 
-has irc_channel         => ( isa => 'Str', is => 'ro', default => '&twitter' );
+has irc_channel => isa => 'Str', is => 'ro', default => '&twitter';
 
 
 =item twitter_args
@@ -140,7 +132,7 @@ has irc_channel         => ( isa => 'Str', is => 'ro', default => '&twitter' );
 
 =cut
 
-has twitter_args => ( isa => 'HashRef', is => 'ro', default => sub { {} } );
+has twitter_args => isa => 'HashRef', is => 'ro', default => sub { {} };
 
 =item extra_net_twitter_traits
 
@@ -148,10 +140,7 @@ has twitter_args => ( isa => 'HashRef', is => 'ro', default => sub { {} } );
 
 =cut
 
-has extra_net_twitter_traits => (
-    is      => 'ro',
-    default => sub { [] },
-);
+has extra_net_twitter_traits => is => 'ro', default => sub { [] };
 
 =item echo_posts
 
@@ -162,7 +151,7 @@ Set C<echo_posts(1)> to see your own tweets in chronological order with the othe
 
 =cut
 
-has echo_posts => ( isa => 'Bool', is => 'rw', default => 0 );
+has echo_posts => isa => 'Bool', is => 'rw', default => 0;
 
 =item favorites_count
 
@@ -170,7 +159,7 @@ has echo_posts => ( isa => 'Bool', is => 'rw', default => 0 );
 
 =cut
 
-has favorites_count => ( isa => 'Int', is => 'ro', default => 3 );
+has favorites_count => isa => 'Int', is => 'ro', default => 3;
 
 =item truncate_to
 
@@ -179,7 +168,8 @@ Defaults to 60.
 
 =cut
 
-has truncate_to         => ( isa => 'Int', is => 'ro', default => 60 );
+has truncate_to => isa => 'Int', is => 'ro', default => 60;
+
 
 =item log_channel
 
@@ -187,7 +177,7 @@ has truncate_to         => ( isa => 'Int', is => 'ro', default => 60 );
 
 =cut
 
-has log_channel => ( isa => 'Str', is => 'ro' );
+has log_channel => isa => 'Str', is => 'ro';
 
 =item state_file
 
@@ -196,7 +186,7 @@ replies, direct messages, and timelines.
 
 =cut
 
-has state_file => ( isa => 'Str', is => 'ro' );
+has state_file => isa => 'Str', is => 'ro';
 
 =item plugins
 
@@ -204,12 +194,14 @@ has state_file => ( isa => 'Str', is => 'ro' );
 
 =cut
 
-has plugins => ( isa => 'ArrayRef[Object]', is => 'ro', default => sub { [] } );
+has plugins => isa => 'ArrayRef[Object]', is => 'ro', default => sub { [] };
 
 =back
 
 
 =cut
+
+has irc_nickname => isa => 'Str', is => 'rw', init_arg => undef;
 
 has _twitter => is => 'rw', isa => 'Object', lazy => 1, default => sub {
     my $self = shift;
@@ -223,7 +215,7 @@ has _twitter => is => 'rw', isa => 'Object', lazy => 1, default => sub {
 
 has ircd => isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1;
 
-has _users_by_nick => (
+has _users_by_nick =>
     traits   => [qw/Hash/],
     isa      => 'HashRef[HashRef|Object]',
     is       => 'rw',
@@ -235,43 +227,26 @@ has _users_by_nick => (
         get_user_by_nick    => 'get',
         delete_user_by_nick => 'delete',
         user_nicks          => 'keys',
-    },
-);
+    };
 
-has _joined => ( accessor => 'joined', isa => 'Bool', is => 'rw', default => 0 );
+has _joined => accessor => 'joined', isa => 'Bool', is => 'rw', default => 0;
 
-has _tweet_stack => (
-       accessor => 'tweet_stack',
-       isa      => 'ArrayRef[Object]',
-       is       => 'rw',
-       default  => sub { [] },
-);
-has _dm_stack => (
-       accessor => 'dm_stack',
-       isa      => 'ArrayRef[Object]',
-       is       => 'rw',
-       default  => sub { [] },
-);
+has _stash => accessor  => 'stash',
+    isa       => 'HashRef',
+    is        => 'rw',
+    predicate => 'has_stash',
+    clearer   => 'clear_stash';
 
-has _stash => (
-        accessor  => 'stash',
-        isa       => 'HashRef',
-        is        => 'rw',
-        predicate => 'has_stash',
-        clearer   => 'clear_stash',
-);
+has state =>
+    isa      => 'POE::Component::Server::Twirc::State',
+    is       => 'rw',
+    lazy     => 1,
+    handles  => [qw/set_user_by_id get_user_by_id delete_user_by_id get_users/],
+    default  => sub { POE::Component::Server::Twirc::State->new };
 
-has state => (
-        isa      => 'POE::Component::Server::Twirc::State',
-        is       => 'rw',
-        lazy     => 1,
-        handles  => [qw/set_user_by_id get_user_by_id delete_user_by_id get_users/],
-        default  => sub { POE::Component::Server::Twirc::State->new },
-);
+has _unread_posts => isa => 'HashRef', is => 'rw', default => sub { {} };
 
-has _unread_posts => ( isa => 'HashRef', is => 'rw', default => sub { {} } );
-
-has client_encoding => ( isa => 'Str', is  => 'rw', default => sub { 'utf-8' } );
+has client_encoding => isa => 'Str', is  => 'rw', default => sub { 'utf-8' };
 
 # force build of users by nick hash early
 sub BUILD { shift->_users_by_nick }
