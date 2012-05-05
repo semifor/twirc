@@ -362,9 +362,22 @@ sub nicks_alternation {
 sub add_user {
     my ($self, $user) = @_;
 
+    my $nick = $$user{screen_name};
+    $self->log->trace("add_user: $nick");
+
+    # handle nick changes
+    if ( my $current_user = $self->get_user_by_id($$user{id}) ) {
+        $self->post_ircd(daemon_cmd_nick => $$current_user{screen_name}, $nick)
+            if $nick ne $$current_user{screen_name};
+    }
+
     $$user{FRESH} = time;
     $self->set_user_by_id($user->{id}, $user);
     $self->set_user_by_nick(lc($user->{screen_name}), $user);
+
+    unless ( $self->ircd->state_nick_exists($nick) ) {
+        $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $$user{name} });
+    }
 }
 
 sub delete_user {
@@ -775,11 +788,15 @@ sub is_follower_id {
 event friend_join => sub {
     my ( $self, $friend ) = @_[OBJECT, ARG0];
 
-    $self->post_ircd(add_spoofed_nick => { nick => $friend->{screen_name}, ircname => $friend->{name} });
-    $self->post_ircd(daemon_cmd_join => $friend->{screen_name}, $self->irc_channel);
+    my $nick = $$friend{screen_name};
+    $self->log->trace("friend_join: $nick");
+
+    $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $$friend{name} })
+        unless $self->ircd->state_nick_exists($nick);
+
+    $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
     if ( $self->is_follower_id($$friend{id}) ) {
-        $self->post_ircd(daemon_cmd_mode =>
-            $self->irc_botname, $self->irc_channel, '+v', $$friend{screen_name});
+        $self->post_ircd(daemon_cmd_mode => $self->irc_botname, $self->irc_channel, '+v', $nick);
     }
 };
 
@@ -882,15 +899,13 @@ event friends_ids => sub {
 event on_tweet => sub {
     my ( $self, $status ) = @_[OBJECT, ARG0];
 
-    my $text = $self->formatted_status_text($status);
+    # add or freshen user
+    $self->add_user($$status{user});
+
     my $nick = $$status{user}{screen_name};
+    my $text = $self->formatted_status_text($status);
     if ( $nick eq $self->irc_nickname ) {
         $self->set_topic($text);
-    }
-
-    unless ( $self->ircd->state_nick_exists($nick) ) {
-        $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $$status{user}{name} });
-        $self->add_user($$status{user});
     }
 
     unless ( $self->ircd->state_is_chan_member($nick, $self->irc_channel) ) {
