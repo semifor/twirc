@@ -313,6 +313,7 @@ sub twitter {
         if ( blessed $_ && $_->can('code') && $_->code == 502 ) {
             $_ = 'Fail Whale';
         }
+        s/ at .* line \d+//;
         $self->twitter_error("$method -> $_");
         undef;
     };
@@ -1425,6 +1426,44 @@ event report_spam_helper => sub {
 
     $self->twitter(report_spam => { screen_name => $spammer });
 };
+
+=item add I<screen_name> to I<list-slug>
+
+Add a user to one of your lists.
+
+=cut
+
+event cmd_add => sub { $_[OBJECT]->_add_remove_list_member(qw/add to/, @_[ARG0, ARG1]) };
+
+sub _add_remove_list_member {
+    my ( $self, $verb, $preposition, $channel, $args ) = @_;
+
+    my ( $nick, $slug ) = ($args || '') =~ /
+        ^@?(\w+)        # nick; strip leading @ if there is one
+        \s+$preposition\s+
+        ([-\w]+)        # the list-slug
+        \s*$
+    /x;
+
+    unless ( defined $nick ) {
+        $self->bot_says($channel, "usage: $verb <nick> $preposition <list-slug>");
+        return;
+    }
+
+    $self->twitter($verb . '_list_member' => {
+        owner_id    => $self->twitter_id,
+        slug        => $slug,
+        screen_name => $nick,
+    });
+};
+
+=item remove I<screen_name> from I<list-slug>
+
+Add a user to one of your lists.
+
+=cut
+
+event cmd_remove => sub { $_[OBJECT]->_add_remove_list_member(qw/remove from/, @_[ARG0, ARG1]) };
 
 =item help
 
