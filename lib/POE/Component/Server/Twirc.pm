@@ -1062,18 +1062,32 @@ event cmd_post => sub {
 
     $self->log->trace("[cmd_post_status]");
 
-    my $http_urls = (my $stripped = $text) =~ s/$RE{URI}{HTTP}//g;
-    my $https_urls = $stripped =~ s/$RE{URI}{HTTP}{-scheme => 'https'}//g;
-
-    if ( (my $n = length($stripped) + $http_urls * 20 + $https_urls * 21 - 140) > 0 ) {
-        $self->bot_says($channel, "Message not sent; $n characters too long. Limit is 140 characters.");
-        return;
-    }
+    return if $self->status_text_too_long($channel, $text);
 
     my $status = $self->twitter(update => $text) || return;
 
     $self->log->trace("    update returned $status");
 };
+
+sub status_text_too_long {
+    my ( $self, $channel, $text ) = @_;
+
+    if ( (my $n = $self->_calc_text_length($text) - 140) > 0 ) {
+        $self->bot_says($channel, "$n characters too long.");
+        return $n;
+    }
+
+    return;
+}
+
+sub _calc_text_length {
+    my ( $self, $text ) = @_;
+
+    my $http_urls  = $text =~ s/$RE{URI}{HTTP}//g;
+    my $https_urls = $text =~ s/$RE{URI}{HTTP}{-scheme => 'https'}//g;
+
+    return length($text) + $http_urls * 20 + $https_urls * 21;
+}
 
 =item follow I<id>
 
@@ -1360,6 +1374,8 @@ event cmd_reply => sub {
         return;
     }
 
+    $message = "\@$nick $message";
+    return if $self->status_text_too_long($channel, $message);
 
     $count ||= $self->favorites_count;
 
@@ -1372,7 +1388,6 @@ event cmd_reply => sub {
     $self->stash({
         handler    => '_handle_reply',
         candidates => [ map $_->{id_str}, @$recent ],
-        recipient  => $nick,
         message    => $message,
     });
 
@@ -1387,16 +1402,10 @@ sub _handle_reply {
 
     my @candidates = @{$self->stash->{candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
-        my $message = sprintf '@%s %s', @{$self->stash}{qw/recipient message/};
-        if ( (my $n = length($message) - 140) > 0 ) {
-            $self->bot_says($channel, "Message not sent; $n characters too long. Limit is 140 characters.");
-        }
-        else {
-            $self->twitter(update => {
-                status => $message,
-                in_reply_to_status_id => $candidates[$index - 1],
-            });
-        }
+        $self->twitter(update => {
+            status                => $self->stash->{message},
+            in_reply_to_status_id => $candidates[$index - 1],
+        });
         $self->clear_stash;
         return 1; # handled
     }
