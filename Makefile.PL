@@ -17,7 +17,6 @@ requires 'HTML::Entities';
 requires 'Log::Log4perl';
 requires 'LWP::UserAgent::POE'         => '0.02';
 requires 'Moose';
-requires 'MooseX::AttributeHelpers';
 requires 'MooseX::Getopt'              => '0.15';
 requires 'MooseX::Log::Log4perl::Easy';
 requires 'MooseX::POE'                 => 0.205;

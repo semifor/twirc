@@ -1,7 +1,6 @@
 package POE::Component::Server::Twirc;
 use MooseX::POE;
 
-use MooseX::AttributeHelpers;
 use LWP::UserAgent::POE;
 use POE qw(Component::Server::IRC);
 use Net::Twitter;
