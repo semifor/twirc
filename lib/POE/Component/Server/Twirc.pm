@@ -6,7 +6,7 @@ use LWP::UserAgent::POE;
 use POE qw(Component::Server::IRC);
 use Net::Twitter;
 use Email::Valid;
-use String::Truncate qw/elide/;
+use String::Truncate elide => { marker => '…' };
 use POE::Component::Server::Twirc::LogAppender;
 use POE::Component::Server::Twirc::State;
 use Encode qw/decode/;
@@ -972,7 +972,8 @@ sub _favorite_or_retweet {
     my $link = "https://twitter.com/$$status{user}{screen_name}/status/$$status{id}";
     my $text = $self->formatted_status_text($status);
 
-    $self->bot_notice($self->irc_channel, elide(qq/$who $verb $whom "$text"/, 80) . " [$link]");
+    $self->bot_notice($self->irc_channel,
+        elide(qq/$who $verb $whom "$text"/, 80, { marker => '…"' }) . " [$link]");
 }
 
 sub on_event_block {
