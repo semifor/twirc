@@ -404,17 +404,23 @@ has twitter_stream_watcher => is => 'rw', clearer => 'disconnect_twitter_stream'
 
 has authenticated_user => is => 'rw', isa => 'HashRef', init_arg => undef;
 
+sub max_reconnect_delay    () { 600 } # ten minutes
+sub twitter_stream_timeout () {  65 } # should get activity every 30 seconds
+
 sub twitter_screen_name { shift->authenticated_user->{screen_name} }
 sub twitter_id          { shift->authenticated_user->{id} }
 
 sub connect_twitter_stream {
     my $self = shift;
 
+    $self->log->trace('connect_twitter_stream');
+
     my $w; $w = AnyEvent::Twitter::Stream->new(
         $self->_twitter_auth,
         token        => $self->state->access_token,
         token_secret => $self->state->access_token_secret,
         method       => 'userstream',
+        timeout      => $self->twitter_stream_timeout,
         on_connect   => sub {
             $self->twitter_stream_watcher($w);
             $self->log->info('Connected to Twitter');
@@ -426,19 +432,25 @@ sub connect_twitter_stream {
             $self->connect_twitter_stream if $self->has_twitter_stream_watcher;
         },
         on_error   => sub {
+            undef $w;
             my $e = shift;
             $self->log->error("on_error: $e");
             $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
             if ( $e =~ /^420:/ ) {
-                $self->log->error("excessive login rate; shutting down");
+                $self->log->fatal("excessive login rate; shutting down");
                 $self->call('poco_shutdown');
             }
 
-            # progressively backoff on reconnection attepts
+            # progressively backoff on reconnection attepts to max_reconnect_delay
+            if ( my $delay = $self->reconnect_delay ) {
+                $self->log->debug("delaying $delay seconds before reconnecting");
+            }
             my $t; $t = AE::timer $self->reconnect_delay, 0, sub {
-                $self->reconnect_delay($self->reconnect_delay * 2 || 1);
-                $self->connect_twitter_stream;
                 undef $t;
+                my $next_delay = $self->reconnect_delay * 2 || 1;
+                $next_delay = $self->max_reconnect_delay if $next_delay > $self->max_reconnect_delay;
+                $self->reconnect_delay($next_delay);
+                $self->connect_twitter_stream;
             };
         },
         on_keepalive   => sub {
