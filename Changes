@@ -1,3 +1,7 @@
+0.14 2012-05-08
+    - use Twitter User Streams API instead of polling
+    - use PIN based Twitter OAuth authentication (Twitter dropped our xAuth access)
+    - simplified configuration (config and state files are now optional)
     - add proper POE fork code (Apocalypse)
 
 0.13 2010-12-10
