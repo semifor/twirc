@@ -4,7 +4,6 @@ use MooseX::POE;
 use LWP::UserAgent::POE;
 use POE qw(Component::Server::IRC);
 use Net::Twitter;
-use Email::Valid;
 use String::Truncate elide => { marker => '…' };
 use POE::Component::Server::Twirc::LogAppender;
 use POE::Component::Server::Twirc::State;
@@ -28,8 +27,7 @@ POE::Component::Server::Twirc - Twitter/IRC gateway
 
     use POE::Component::Server::Twirc;
 
-    POE::Component::Server::Twirc->new(
-    );
+    POE::Component::Server::Twirc->new;
 
     POE::Kernel->run;
 
@@ -73,7 +71,7 @@ has irc_server_port => isa => 'Int', is => 'ro', default => 6667;
 
 =item irc_server_bindaddr
 
-(Optional) The local address to bind to. Defaults to all interfaces.
+(Optional) The local address to bind to. Defaults to '127.0.0.1'.
 
 =cut
 
@@ -142,24 +140,13 @@ has twitter_args => isa => 'HashRef', is => 'ro', default => sub { {} };
 
 has extra_net_twitter_traits => is => 'ro', default => sub { [] };
 
-=item echo_posts
-
-(Optional) If false, posts sent by L<POE::Component::Server::Twirc> will not be redisplayed when received
-is the friends_timeline.  Defaults to false.
-
-Set C<echo_posts(1)> to see your own tweets in chronological order with the others.
-
-=cut
-
-has echo_posts => isa => 'Bool', is => 'rw', default => 0;
-
-=item favorites_count
+=item selection_count
 
 (Optional) How many favorites candidates to display for selection. Defaults to 3.
 
 =cut
 
-has favorites_count => isa => 'Int', is => 'ro', default => 3;
+has selection_count => isa => 'Int', is => 'ro', default => 3;
 
 =item truncate_to
 
@@ -229,13 +216,8 @@ has _users_by_nick =>
         user_nicks          => 'keys',
     };
 
-has _joined => accessor => 'joined', isa => 'Bool', is => 'rw', default => 0;
-
-has _stash => accessor  => 'stash',
-    isa       => 'HashRef',
-    is        => 'rw',
-    predicate => 'has_stash',
-    clearer   => 'clear_stash';
+has joined => init_arg => undef, isa => 'Bool', is => 'rw', default => 0;
+has stash  => init_arg => undef, isa => 'HashRef', is => 'rw', predicate => 'has_stash', clearer => 'clear_stash';
 
 has state =>
     isa      => 'POE::Component::Server::Twirc::State',
@@ -244,9 +226,13 @@ has state =>
     handles  => [qw/set_user_by_id get_user_by_id delete_user_by_id get_users/],
     default  => sub { POE::Component::Server::Twirc::State->new };
 
-has _unread_posts => isa => 'HashRef', is => 'rw', default => sub { {} };
-
 has client_encoding => isa => 'Str', is  => 'rw', default => sub { 'utf-8' };
+
+has reconnect_delay => is => 'rw', isa => 'Num', default => 0;
+has twitter_stream_watcher => is => 'rw', clearer => 'disconnect_twitter_stream',
+        predicate => 'has_twitter_stream_watcher';
+
+has authenticated_user => is => 'rw', isa => 'HashRef', init_arg => undef;
 
 # force build of users by nick hash early
 sub BUILD { shift->_users_by_nick }
@@ -398,17 +384,63 @@ sub _net_twitter_opts {
     return %config;
 }
 
-has reconnect_delay => is => 'rw', isa => 'Num', default => 0;
-has twitter_stream_watcher => is => 'rw', clearer => 'disconnect_twitter_stream',
-        predicate => 'has_twitter_stream_watcher';
-
-has authenticated_user => is => 'rw', isa => 'HashRef', init_arg => undef;
-
 sub max_reconnect_delay    () { 600 } # ten minutes
 sub twitter_stream_timeout () {  65 } # should get activity every 30 seconds
+sub friends_stale_after    () { 7*24*3600 } # 1 week
+
+sub is_user_stale {
+    my ( $self, $user ) = @_;
+
+    return time - $user->{FRESH} > $self->friends_stale_after;
+}
+
+sub followers_stale_after () { 24*3600 } # 1 day
+sub are_followers_stale {
+    my $self = shift;
+
+    return time - $self->state->followers_updated_at > $self->followers_stale_after;
+}
+
+sub add_follower_id {
+    my ( $self, $id ) = @_;
+
+    $self->state->followers->{$id} = undef;
+}
+
+sub remove_follower_id {
+    my ( $self, $id ) = @_;
+
+    delete $self->state->followers->{$id};
+}
+
+sub is_follower_id {
+    my ( $self, $id ) = @_;
+
+    return exists $self->state->followers->{$id};
+}
 
 sub twitter_screen_name { shift->authenticated_user->{screen_name} }
 sub twitter_id          { shift->authenticated_user->{id} }
+
+sub formatted_status_text {
+    my ( $self, $status ) = @_;
+
+    my $is_retweet = !!$$status{retweeted_status};
+    my $s = $$status{retweeted_status} || $status;
+    my $text = $$s{text};
+    for my $e ( reverse @{$$s{entities}{urls} || []} ) {
+        my ($start, $end) = @{$$e{indices}};
+        substr $text, $start, $end - $start, "[$$e{display_url}]($$e{url})";
+    }
+
+    decode_entities($text);
+
+    # When the status is a retweet from verify_credentials, it doesn't have a user element
+    my $orig_author = $$s{user}{screen_name} || $$status{entities}{user_mentions}[0]{screen_name};
+    $text = "RT \@$orig_author: $text" if $is_retweet;
+
+    return $text;
+}
 
 sub connect_twitter_stream {
     my $self = shift;
@@ -739,38 +771,6 @@ event ircd_daemon_privmsg => sub {
     $self->twitter(new_direct_message => { user => $target_nick, text => $text });
 };
 
-sub friends_stale_after () { 7*24*3600 } # 1 week
-sub is_user_stale {
-    my ( $self, $user ) = @_;
-
-    return time - $user->{FRESH} > $self->friends_stale_after;
-}
-
-sub followers_stale_after () { 24*3600 } # 1 day
-sub are_followers_stale {
-    my $self = shift;
-
-    return time - $self->state->followers_updated_at > $self->followers_stale_after;
-}
-
-sub add_follower_id {
-    my ( $self, $id ) = @_;
-
-    $self->state->followers->{$id} = undef;
-}
-
-sub remove_follower_id {
-    my ( $self, $id ) = @_;
-
-    delete $self->state->followers->{$id};
-}
-
-sub is_follower_id {
-    my ( $self, $id ) = @_;
-
-    return exists $self->state->followers->{$id};
-}
-
 event friend_join => sub {
     my ( $self, $friend ) = @_[OBJECT, ARG0];
 
@@ -834,26 +834,6 @@ event set_voice => sub {
             $$user{screen_name});
     }
 };
-
-sub formatted_status_text {
-    my ( $self, $status ) = @_;
-
-    my $is_retweet = !!$$status{retweeted_status};
-    my $s = $$status{retweeted_status} || $status;
-    my $text = $$s{text};
-    for my $e ( reverse @{$$s{entities}{urls} || []} ) {
-        my ($start, $end) = @{$$e{indices}};
-        substr $text, $start, $end - $start, "[$$e{display_url}]($$e{url})";
-    }
-
-    decode_entities($text);
-
-    # When the status is a retweet from verify_credentials, it doesn't have a user element
-    my $orig_author = $$s{user}{screen_name} || $$status{entities}{user_mentions}[0]{screen_name};
-    $text = "RT \@$orig_author: $text" if $is_retweet;
-
-    return $text;
-}
 
 ########################################################################
 # Twitter events
@@ -1215,7 +1195,7 @@ event cmd_favorite => sub {
     my ($self, $channel, $args) = @_[OBJECT, ARG0, ARG1];
 
     my ($nick, $count) = split /\s+/, $args;
-    $count ||= $self->favorites_count;
+    $count ||= $self->selection_count;
 
     $self->log->trace("[cmd_favorite] $nick");
 
@@ -1290,7 +1270,7 @@ event cmd_retweet => sub {
 
     my ( $nick, $count ) = split /\s+/, $args;
 
-    $count ||= $self->favorites_count;
+    $count ||= $self->selection_count;
 
     my $recent = $self->twitter(user_timeline => { screen_name => $nick, count => $count }) || return;
     if ( @$recent == 0 ) {
@@ -1360,7 +1340,7 @@ event cmd_reply => sub {
     $message = "\@$nick $message";
     return if $self->status_text_too_long($channel, $message);
 
-    $count ||= $self->favorites_count;
+    $count ||= $self->selection_count;
 
     my $recent = $self->twitter(user_timeline => { screen_name => $nick, count => $count }) || return;
     if ( @$recent == 0 ) {

@@ -14,6 +14,7 @@ has configfile => (
     cmd_aliases => 'c',
     isa         => 'Str',
     is          => 'ro',
+    documentation => 'configration file name',
 );
 
 has background => (
@@ -21,6 +22,7 @@ has background => (
     cmd_aliases => 'b',
     isa         => 'Bool',
     is          => 'ro',
+    documentation => 'run as daemon',
 );
 
 has authenticate => (
@@ -28,7 +30,8 @@ has authenticate => (
     cmd_aliases => [qw/a auth/],
     isa         => 'Bool',
     is          => 'ro',
-    default     => 0
+    default     => 0,
+    documentation => 'force Twitter authentication',
 );
 
 has state_file => (
@@ -37,6 +40,7 @@ has state_file => (
     isa         => 'Str',
     is          => 'ro',
     predicate   => 'has_state_file',
+    documentation => 'state file name',
 );
 
 has debug => (
@@ -45,6 +49,7 @@ has debug => (
     isa         => 'Bool',
     is          => 'ro',
     default     => 0,
+    documentation => 'set logging level to DEBUG',
 );
 
 sub run {
@@ -137,8 +142,8 @@ App::Twirc - IRC is my twitter client
 
     use App::Twirc;
 
-    my $twirc = App::Twirc->new_with_options();
-    $twirc->run;
+    my $app = App::Twirc->new_with_options();
+    $app->run;
 
 =head1 DESCRIPTION
 
@@ -158,6 +163,21 @@ Required.  The name of the configuration file containing options for L<POE::Comp
 =item background
 
 Boolean value to determine whether to run in the foreground (0), or background (1).
+
+=item authenticate
+
+Forces OAuth authentication with Twitter, supplying a URL for Twitter OAuth
+authentication and prompting for the OAuth verifier PIN. Use this method
+re-authenticate with Twitter, if necessary.
+
+=item state_file
+
+Specifies a file name for loading/storing state information, including a list
+of friends, followers_ids, and OAuth access tokens.
+
+=item debug
+
+Boolean, when set to 1, enables DEBUG level logging.
 
 =back
 

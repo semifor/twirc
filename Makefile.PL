@@ -10,7 +10,6 @@ install_script  'bin/twirc';
 
 requires 'AnyEvent::Twitter::Stream';
 requires 'Config::Any';
-requires 'Email::Valid'                => 0;
 requires 'Encode';
 requires 'FindBin';
 requires 'HTML::Entities';
