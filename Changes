@@ -1,3 +1,5 @@
+0.15 2012-05-09
+    - Fixed: exit server on disconnect
     - Bumped requried version of MooseX::POE (resovles failed CPAN Testers report)
 
 0.14 2012-05-08

@@ -17,7 +17,7 @@ use Regexp::Common qw/URI/;
 
 with 'MooseX::Log::Log4perl';
 
-our $VERSION = '0.14';
+our $VERSION = '0.15';
 
 =head1 NAME
 
