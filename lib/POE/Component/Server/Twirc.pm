@@ -294,17 +294,6 @@ sub twitter_error {
     $self->bot_notice($self->irc_channel, "Twitter error: $text");
 };
 
-my $zero_id = "0" x 19;
-sub id_gt { id_cmp(@_) > 0 }
-
-sub id_cmp {
-    # Twitter now uses 64 bit ints for status IDs, so we use id_str to avoid trouble on
-    # 32-bit platforms.  So we do string comparison on IDs after zero padding them to their
-    # maximum length.
-    my ( $a, $b ) = map substr($zero_id . $_, -19), @_;
-    $a cmp $b;
-}
-
 # set topic from status, iff newest status
 sub set_topic {
     my ($self, $text) = @_;

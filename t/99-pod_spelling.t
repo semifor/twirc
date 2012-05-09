@@ -38,9 +38,11 @@ configfile
 favoriting
 irc
 irssi
+OAuth
 plugins
 redisplaying
 retweet
+retweeting
 spammers
 timeline
 timelines
@@ -48,4 +50,5 @@ twirc
 un
 unfollow
 username
+verifier
 whois

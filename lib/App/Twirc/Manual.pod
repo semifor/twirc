@@ -130,6 +130,11 @@ option to C<&log>, then you can join the C<&log> channel and see the copious
 debug messages that C<twirc> generates.  This may be useful for trouble
 shooting or problem reporting.
 
+=item log_level
+
+Twirc supports C<log_level> values OFF, FATAL, ERROR, WARN, INFO, DEBUG, and
+TRACE.  The default is WARN.
+
 =item state_file
 
 File used to store state information between sessions, including Twitter OAuth
@@ -174,7 +179,7 @@ Is a shortcut for:
 
     post @twirc you make twitter usable!
 
-C<twirc> uses the Twitter User Streams API to recieve updates in real-time.
+C<twirc> uses the Twitter User Streams API to receive updates in real-time.
 
 Use IRC private messaging to send direct messages.  In C<irssi>:
 
