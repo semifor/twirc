@@ -27,32 +27,14 @@ CONFIGURATION
     JSON, Apache-style configuration, Windows INI file format, or even Perl
     code.
 
-    Here's a minimal configuration in YAML:
+    A configuration file is not necessary, but is recommended.
 
-        irc_nickname: MyIRCNick
-        twitter_username: my_email_address@example.com
-        twitter_password: secret
-        twitter_screen_name: MyTwitterScreenName
+    Here's an example configuration in YAML:
 
-  REQUIRED CONFIGURATION OPTIONS
-    irc_nickname
-        The irc nickname used by the owning user. This is the nickname *you*
-        will use when you connect to the "twirc" IRC server.
+        state_file: twirc.state
+        log_level: INFO
 
-    twitter_username
-        The username (email address) used to authenticate with Twitter. This
-        is the ID "twirc" will use to authenticate with Twitter.
-
-    twitter_password
-        The password used to authenticate with Twitter. This is the password
-        "twirc" will use to authenticate with twitter.
-
-    twitter_screen_name
-        The user's Twitter screen name. This is *your* screen name on
-        Twitter. It may very well be the same as your "irc_nickname", but it
-        certainly doesn't have to be.
-
-  OPTIONAL CONFIGURATION OPTIONS
+  CONFIGURATION OPTIONS
     irc_server_name
         The name of the IRC server. Defaults to "twitter.irc". Every IRC
         server has a name. The IRC server included with "twirc" isn't
@@ -101,22 +83,6 @@ CONFIGURATION
         Network channels begin with "#". You can use either to name, however
         "&" is more appropriate.
 
-    twitter_retry
-        The number of seconds between polls for new status updates, replies,
-        and direct messages. Defaults to 300 (5 minutes). Twitter imposes a
-        rate limit of 100 API calls per hour. By default, after initial
-        start up, twirc makes a single API call every "twitter_retry"
-        seconds. Adding "check_replies" and "check_direct_messages" each add
-        an additional API call. Setting "twitter_retry" too low can cause
-        twirc to exceed the rate limit and delay receipt of messages.
-
-        Use the "rate_limit_status" command to check your available API
-        calls.
-
-    twitter_retry_on_error
-        The number of seconds to wait before retrying a failed twitter API
-        call in the polling loop. Defaults to 60 (1 minute).
-
     twitter_alias
         An alias to use for displaying incoming status updates from the
         owning user. This is necessary if the user's IRC nickname and
@@ -126,33 +92,9 @@ CONFIGURATION
         your timeline from your Twitter screen name, it will use "me" in
         place of your Twitter screen name in the channel.
 
-    echo_posts
-        If false, posts sent by "twirc" will not be redisplayed when polling
-        the timeline. Defaults to 0 (false).
-
-        This option in off, be default, to prevent some unnecessary noise in
-        the channel. When you post a new status message with "twirc", you
-        will see your post command, including your status message in the
-        channel. Tweeter, the bot, will send your status update to twitter,
-        and then set the channel topic to your message. If your IRC client
-        displays notices, you will see your message a second time in status
-        change. If this option is set to true, you will see it a third time,
-        when "twirc" next polls Twitter for new status messages.
-
-        So, why would you ever want "echo_posts" on? "Twirc" polls Twitter
-        for new messages every 5 minutes, by default. So, there may be
-        messages waiting and other messages received after your status
-        update, but before "twirc" checks for new messages again. With
-        "echo_posts" on, you will see your message again, in chronological
-        order with the rest of the incoming messages.
-
-    favorites_count
-        How many favorites candidates to display for selection. Defaults to
-        3.
-
-        When you use the "favorite" command, a list of recent status from
-        the friend your a favoriting are displayed for you to choose from.
-        This option tell "twirc" how many of those messages to display.
+    selection_count
+        How many status messages to display for selection when favoriting,
+        replying, or retweeting. Defaults to 3.
 
     truncate_to
         When displaying a list tweets for selection, for example, in
@@ -160,73 +102,34 @@ CONFIGURATION
         length to avoid cluttering the screen with long messages that wrap.
         Defaults to 60.
 
-    check_replies
-        Defaults to 0 (off). If set to 1 (on), checks for @replies when
-        polling for friends' timeline updates and merges them with normal
-        status updates. Normally, only replies from friends you are
-        following are displayed, just like your home page on Twitter. This
-        provides the display of @replies from users not followed.
-
-        "check_replies" adds an API call, counted against Twitter's rate
-        limit every "twitter_retry" seconds.
-
-        (This also has the effect of adding senders of @replies to the
-        channel, even though they are not followed.)
-
-    check_direct_messages
-        If true, checks for direct messages in each timeline polling cycle.
-
-        "check_direct_messages" adds an API call, counted against Twitter's
-        rate limit every "twitter_retry" seconds.
-
     log_channel
         If specified, twirc will post log messages to this channel. If you
         set this option to &log, then you can join the &log channel and see
         the copious debug messages that "twirc" generates. This may be
         useful for trouble shooting or problem reporting.
 
+    log_level
+        Twirc supports "log_level" values OFF, FATAL, ERROR, WARN, INFO,
+        DEBUG, and TRACE. The default is WARN.
+
     state_file
         File used to store state information between sessions, including
-        last message read for replies, direct messages, and timelines.
-
-        By default, "twirc" does not save any state information between
-        runs. When you start "twirc" it grabs the most recent 20 messages in
-        the timeline and displays them, even if they are the same 20
-        messages it displayed last time your ran "twirc".
-
-        If you use "check_direct_messages" you will definitely want to use a
-        state file so that you do not receive the same batch of direct
-        messages every time you start "twirc".
-
-        If you do provide a "state_file" name, "twirc" will save the last
-        message ID it processed of each type (friends_timeline,
-        user_timeline, replies, and direct messages). It won't redisplay
-        messages it as already displayed on a previous run.
-
-        "Twirc" will still only show the most recent 20 messages on restart,
-        though. The "state_file" option just prevents redisplaying messages
-        already seen.
-
-    verbose_refresh
-        Default 0 (off). If set, when a refresh (whether automatic or the
-        result of the "refresh" command) finds no new messages, a notice to
-        that effect will be written to the channel.
+        Twitter OAuth access tokens, friends, and followers_ids.
 
 USING
     To use "twirc" you first need to start the server:
 
-        bin/twirc -c twirc.yml -b
+        bin/twirc -b --state_file=twirc.state
 
-    The "-b" option runs "twirc" in the background. Drop the "-b" to see
-    copious log messages to STDERR.
+    The "-b" option runs "twirc" in the background. Drop the "-b" to see log
+    messages to STDERR. (The author runs twirc and his irc client in screen,
+    <http://www.gnu.org/software/screen/>, to monitor log messages to
+    STDERR.)
 
     Next, connect to the server from your IRC client. I use "irssi"
     (<http://www.irssi.org>) and my examples will use "irssi" commands:
 
-        /connect localhost 6667 secret
-
-    where "secret" is the password set in the config file with option
-    "irc_password". Your IRC client may use different commands.
+        /connect localhost
 
     On connection, "twirc" will automatically join you to the configured
     channel. The default &twitter will be assumed, here.
@@ -250,12 +153,8 @@ USING
 
         post @twirc you make twitter usable!
 
-    By default, "twirc" checks for updates every 5 minutes. You can have it
-    check immediately using the "refresh" command:
-
-        refresh
-
-    "Twirc" will check for messages immediately, then again every 5 minutes.
+    "twirc" uses the Twitter User Streams API to receive updates in
+    real-time.
 
     Use IRC private messaging to send direct messages. In "irssi":
 
@@ -299,14 +198,6 @@ COMMAND REFERENCE
         of tweets to display for selection with "count". ("count" defaults
         to 3. The default can be changed with the "favorites_count" option.)
 
-    check_replies on|off
-        Turns reply checking on or off. See "check_replies" in
-        configuration.
-
-    check_direct_messages on|off
-        Turns direct message checking on or off. See "check_direct_messages"
-        in configuration.
-
     rate_limit_status
         Displays information about the remaining number of API requests
         available in the current hour. The "rate_limit_status" command does
@@ -314,10 +205,6 @@ COMMAND REFERENCE
 
     help
         Display a simple help message listing the available command names.
-
-    verbose_refresh on|off
-        Turns "verbose_refresh" on or off. See "verbose_refresh" in
-        configuration.
 
 TIPS AND TRICKS
   Ignoring
@@ -344,19 +231,13 @@ TIPS AND TRICKS
 
         # File: semifor.yml
         irc_server_port: 6667
+        irc_password: secret
         irc_channel: '&twitter'
-        irc_nickname: semifor
-        twitter_screen_name: semifor
-        state_file: semifor.state
-        # ...
 
         # File: twirc.yml
         irc_server_port: 6668
+        irc_password: secret
         irc_channel: '&twirc'
-        irc_nickname: twirc
-        twitter_screen_name: twirc
-        state_file: twirc.state
-        # ...
 
     Next, start an instance for each account:
 
@@ -365,16 +246,35 @@ TIPS AND TRICKS
 
     In your IRC client, connect to both instances ("irssi" here):
 
-        /connect localhost 6667 secret_password semifor
-        /connect localhost 6668 secret_password twirc
+        /connect localhost 6667 secret semifor
+        /connect localhost 6668 secret twirc
 
     Now you've got 2 channels, one for each account---in my case, &twitter
     for "semifor" and &twirc for "twirc".
 
+  PLUGINS
+    Plugins are modules that are optionally included by specifying them in
+    user configuration file in the "plugins" section. Some of the plugins
+    included in the distribution are:
+
+    SquashWhiteSpace
+        Squashes whitespace in tweets to a single space. See
+        App::Twirc::Plugin::SquashWhiteSpace.
+
+    BangCommands
+        Commands are prefixed with a bang (i.e., exclamation point "!").
+        Text entered without a bang prefix is posted as a status update. See
+        App::Twirc::Plugin::BangCommands.
+
+    SecondaryAccount
+        Cross-posts status updates to one or more secondary Twitter (or
+        Twitter API compatible, like Identi.ca) accounts. See
+        App::Twirc::Plugin::SecondaryAccount.
+
 SUPPORT
     "Twirc" is free open source software with no warranty of any kind. That
     said, it's used by some competent perl coders who may be able to help if
-    you have trouble. Try the #twirc channel at "irc.perl.org".
+    you have trouble. Try the "#net-twitter" channel at "irc.perl.org".
 
     The code repository with the development branch is located at
     <http://github.com/semifor/twirc>. New features, and bug fixes appear
