@@ -456,6 +456,7 @@ sub connect_twitter_stream {
         on_connect   => sub {
             $self->twitter_stream_watcher($w);
             $self->log->info('Connected to Twitter');
+            $self->bot_notice($self->irc_channel, "Twitter stream connected");
             $self->reconnect_delay(0);
         },
         on_eof       => sub {
@@ -464,7 +465,6 @@ sub connect_twitter_stream {
             $self->connect_twitter_stream if $self->has_twitter_stream_watcher;
         },
         on_error   => sub {
-            undef $w;
             my $e = shift;
             $self->log->error("on_error: $e");
             $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
@@ -685,8 +685,7 @@ event ircd_daemon_quit => sub {
 
     $self->log->trace("[ircd_daemon_quit]");
     return unless my($nick) = $user =~ /^([^!]+)!/;
-    return if $self->get_user_by_nick(lc $nick);
-    return if $nick eq $self->irc_botname;
+    return unless $nick eq $self->irc_nickname;
 
     $self->joined(0);
     $self->yield('poco_shutdown');
