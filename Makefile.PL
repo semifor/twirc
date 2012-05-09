@@ -18,7 +18,7 @@ requires 'LWP::UserAgent::POE'         => '0.02';
 requires 'Moose';
 requires 'MooseX::Getopt'              => '0.15';
 requires 'MooseX::Log::Log4perl::Easy';
-requires 'MooseX::POE'                 => 0.214;
+requires 'MooseX::POE'                 => 0.215;
 requires 'MooseX::SimpleConfig';
 requires 'MooseX::Storage';
 requires 'Net::Twitter'                => '3.11007'; # xauth
