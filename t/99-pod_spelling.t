@@ -46,6 +46,7 @@ retweeting
 spammers
 timeline
 timelines
+Twirc
 twirc
 un
 unfollow
