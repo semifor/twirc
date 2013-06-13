@@ -8,7 +8,7 @@ all_from 'lib/POE/Component/Server/Twirc.pm';
 
 install_script  'bin/twirc';
 
-requires 'AnyEvent::Twitter::Stream';
+requires 'AnyEvent::Twitter::Stream'   => '0.23'; # APIv1.1
 requires 'Config::Any';
 requires 'Encode';
 requires 'FindBin';
@@ -21,7 +21,7 @@ requires 'MooseX::Log::Log4perl::Easy';
 requires 'MooseX::POE'                 => 0.215;
 requires 'MooseX::SimpleConfig';
 requires 'MooseX::Storage';
-requires 'Net::Twitter'                => '3.11007'; # xauth
+requires 'Net::Twitter'                => '4.00006'; # xauth + APIv1.1
 requires 'Path::Class::File';
 requires 'POE::Component::Server::IRC' => 0.02005;
 requires 'POE::Component::TSTP';
