@@ -352,7 +352,7 @@ sub _net_twitter_opts {
 
     my %config = (
         $self->_twitter_auth,
-        traits               => [qw/API::REST OAuth RetryOnError/],
+        traits               => [qw/API::RESTv1_1 OAuth RetryOnError/],
         useragent_class      => 'LWP::UserAgent::POE',
         useragent            => "twirc/$VERSION",
         decode_html_entities => 1,
