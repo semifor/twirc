@@ -44,6 +44,7 @@ redisplaying
 retweet
 retweeting
 spammers
+SSL
 timeline
 timelines
 Twirc

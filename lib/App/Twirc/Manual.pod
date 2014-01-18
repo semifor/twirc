@@ -140,6 +140,16 @@ TRACE.  The default is WARN.
 File used to store state information between sessions, including Twitter OAuth
 access tokens, friends, and followers_ids.
 
+=item twitter_args
+
+Use this to pass additional parameters to L<Net::Twitter>'s constructor. For
+example, this version of Twirc uses SSL connections to the Twitter API. If
+you're using a service that requires non-SSL connections, add this to your
+configuration file:
+
+    twitter_args:
+        ssl: 0
+
 =back
 
 =head1 USING

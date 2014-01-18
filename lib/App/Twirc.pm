@@ -81,7 +81,11 @@ sub run {
     if ( $self->authenticate || !$state->access_token ) {
         # bloody hack until Twitter restores xauth
 
-        my $nt = Net::Twitter->new(traits => [qw/OAuth/], POE::Component::Server::Twirc->_twitter_auth);
+        my $nt = Net::Twitter->new(
+            traits => [qw/OAuth/],
+            POE::Component::Server::Twirc->_twitter_auth,
+            ssl => 1,
+        );
         print "Authorize twirc at ", $nt->get_authorization_url, "\nThen, enter the PIN# provided: ";
 
         my $pin = <STDIN>;

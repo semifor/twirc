@@ -1,3 +1,6 @@
+0.17 2014-01-18
+    - Enable SSL for Twitter API calls
+
 0.16 2013-06-13
     - initial Twitter API v1.1 support (BinGOs)
 

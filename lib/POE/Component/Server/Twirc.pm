@@ -17,7 +17,7 @@ use Regexp::Common qw/URI/;
 
 with 'MooseX::Log::Log4perl';
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 =head1 NAME
 
@@ -356,6 +356,7 @@ sub _net_twitter_opts {
         useragent_class      => 'LWP::UserAgent::POE',
         useragent            => "twirc/$VERSION",
         decode_html_entities => 1,
+        ssl                  => 1,
         %{ $self->twitter_args },
     );
 
