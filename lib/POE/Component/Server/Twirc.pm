@@ -545,6 +545,7 @@ sub START {
     $self->ircd->add_auth(
         mask     => $self->irc_mask,
         password => $self->irc_password,
+        no_tilde => 1,
     );
     $self->post_ircd('add_listener', port     => $self->irc_server_port,
                                      bindaddr => $self->irc_server_bindaddr);
