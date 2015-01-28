@@ -34,6 +34,21 @@ Or, you can download and unpack C<twirc>, then run it from a directory of your
 choice without running C<make install>.  That's the way the author runs it.  If
 you choose this option, run C<make> to install C<twirc>'s dependencies.
 
+=head1 CONTRIBUTING AND BUILDING
+
+If you'd like to contribute to C<twirc> or just want to build the distribution
+for some other reason, you must have the following Perl modules:
+
+=over 4
+
+=item L<Module::Install>
+
+=item L<Module::Install::Repository>
+
+=item L<Module::Install::AutoManifest>
+
+=back
+
 =head1 CONFIGURATION
 
 C<Twirc> uses L<Config::Any>, so you can configure C<twirc> using XML, YAML,
