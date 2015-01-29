@@ -1220,28 +1220,6 @@ sub _handle_favorite {
     return 0; # unhandled
 };
 
-=item rate_limit_status
-
-Displays the remaining number of API requests available in the current hour.
-
-=cut
-
-event cmd_rate_limit_status => sub {
-    my ($self, $channel) = @_[OBJECT, ARG0];
-
-    if ( my $r = $self->twitter('rate_limit_status') ) {
-        my $reset_time = sprintf "%02d:%02d:%02d", (localtime $r->{reset_time_in_seconds})[2,1,0];
-        my $seconds_remaning = $r->{reset_time_in_seconds} - time;
-        my $time_remaning = sprintf "%d:%02d", int($seconds_remaning / 60), $seconds_remaning % 60;
-        $self->bot_says($channel, sprintf "%s API calls remaining for the next %s (until %s), hourly limit is %s",
-            $$r{remaining_hits},
-            $time_remaning,
-            $reset_time,
-            $$r{hourly_limit},
-        );
-    }
-};
-
 =item retweet I<screen_name> [I<count>]
 
 Re-tweet another user's status.  Specify the user by I<screen_name> and select from a
@@ -1439,7 +1417,7 @@ event cmd_help => sub {
     $self->bot_says($channel, "Available commands:");
     $self->bot_says($channel, join ' ' => sort qw/
         post follow unfollow block unblock whois notify favorite
-        rate_limit_status retweet report_spam
+        retweet report_spam
     /);
     $self->bot_says($channel, '/msg nick for a direct message.')
 };

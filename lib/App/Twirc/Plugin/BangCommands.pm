@@ -30,7 +30,6 @@ App::Twirc::Plugin::BangCommands - Commands prefixed with !
   # in your IRC clientt
   This is a status message (no "post" prefix necessary)
   !follow net_twitter
-  !rate_limit_status
 
 =head1 DESCRIPTION
 
