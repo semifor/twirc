@@ -45,9 +45,10 @@ CONFIGURATION
         The port number the IRC server binds to. Defaults to 6667.
 
     irc_server_bindaddr
-        The local address to bind to. Defaults to all interfaces. You
-        probably want to set this option to 127.0.0.1. That will prevent
-        others from attempting to connect to your "twirc" IRC server.
+        The local address to bind to. Defaults to all 127.0.0.1 to prevent
+        others from connecting to your "twirc" IRC server. If you run
+        "twirc" on a different system than your IRC client, you will need to
+        provide this configuration option with a suitable address.
 
     irc_mask
         The IRC user/host mask used to restrict connecting users. Defaults
@@ -115,6 +116,15 @@ CONFIGURATION
     state_file
         File used to store state information between sessions, including
         Twitter OAuth access tokens, friends, and followers_ids.
+
+    twitter_args
+        Use this to pass additional parameters to Net::Twitter's
+        constructor. For example, this version of Twirc uses SSL connections
+        to the Twitter API. If you're using a service that requires non-SSL
+        connections, add this to your configuration file:
+
+            twitter_args:
+                ssl: 0
 
 USING
     To use "twirc" you first need to start the server:
