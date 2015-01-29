@@ -22,6 +22,15 @@ INSTALLATION
     runs it. If you choose this option, run "make" to install "twirc"'s
     dependencies.
 
+CONTRIBUTING AND BUILDING
+    If you'd like to contribute to "twirc" or just want to build the
+    distribution for some other reason, you must have the following Perl
+    modules:
+
+    Module::Install
+    Module::Install::Repository
+    Module::Install::AutoManifest
+
 CONFIGURATION
     "Twirc" uses Config::Any, so you can configure "twirc" using XML, YAML,
     JSON, Apache-style configuration, Windows INI file format, or even Perl
