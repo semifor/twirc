@@ -258,7 +258,7 @@ sub twitter {
 
     my $r = try { $self->_twitter->$method(@args) }
     catch {
-        $self->log->error("twitter errer: $_");
+        $self->log->error("twitter error: $_");
         if ( blessed $_ && $_->can('code') && $_->code == 502 ) {
             $_ = 'Fail Whale';
         }
