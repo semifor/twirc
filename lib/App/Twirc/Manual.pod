@@ -246,12 +246,6 @@ Mark a friend's tweet as a favorite.  Optionally, specify the number of tweets
 to display for selection with C<count>. (C<count> defaults to 3. The default
 can be changed with the L</"favorites_count"> option.)
 
-=item rate_limit_status
-
-Displays information about the remaining number of API requests available in
-the current hour. The C<rate_limit_status> command does not count against the
-limit, itself.
-
 =item help
 
 Display a simple help message listing the available command names.
