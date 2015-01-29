@@ -63,15 +63,16 @@ The port number the IRC server binds to. Defaults to 6667.
 
 =item irc_server_bindaddr
 
-The local address to bind to. Defaults to all interfaces.  You probably want to
-set this option to C<127.0.0.1>.  That will prevent others from attempting to
-connect to your C<twirc> IRC server.
+The local address to bind to. Defaults to all C<127.0.0.1> to prevent others
+from connecting to your C<twirc> IRC server. If you run C<twirc> on a different
+system than your IRC client, you will need to provide this configuration option
+with a suitable address.
 
 =item irc_mask
 
-The IRC user/host mask used to restrict connecting users.  Defaults to C<*@127.0.0.1>.
-If you run C<twirc> on a different system than your IRC client, you will need
-to provide this configuration option with a suitable mask.
+The IRC user/host mask used to restrict connecting users.  Defaults to
+C<*@127.0.0.1>.  If you run C<twirc> on a different system than your IRC client,
+you will need to provide this configuration option with a suitable mask.
 
 =item irc_password
 
