@@ -255,6 +255,11 @@ name or email address.
 Turns device notifications on or off for the list of one or more Twitter
 friends.  The list is space separated.
 
+=item retweets on|off twitter_screen_name...
+
+Turns retweet display on your timeline on or off for the list of one or more
+Twitter friends.  The list is space separated.
+
 =item favorite friend [ count ]
 
 Mark a friend's tweet as a favorite.  Optionally, specify the number of tweets

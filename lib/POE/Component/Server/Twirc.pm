@@ -33,12 +33,12 @@ POE::Component::Server::Twirc - Twitter/IRC gateway
 
 =head1 DESCRIPTION
 
-C<POE::Component::Server::Twirc> provides an IRC/Twitter gateway.  Twitter friends are
-added to a channel and messages they post on twitter appear as channel
-messages in IRC.  The IRC interface supports several Twitter features,
+C<POE::Component::Server::Twirc> provides an IRC/Twitter gateway.  Twitter
+friends are added to a channel and messages they post on twitter appear as
+channel messages in IRC.  The IRC interface supports several Twitter features,
 including posting status updates, following and un-following Twitter feeds,
-enabling and disabling device notifications, sending direct messages, and
-querying information about specific Twitter users.
+enabling and disabling mobile device notifications or retweets, sending direct
+messages, and querying information about specific Twitter users.
 
 Friends who are also followers are given "voice" as a visual clue in IRC.
 
@@ -1157,22 +1157,50 @@ Turns mobile device notifications on or off for the list of I<screen_name>s.
 =cut
 
 event cmd_notify => sub {
-    my ($self, $channel, $argstr) = @_[OBJECT, ARG0, ARG1];
+    my $self = $_[OBJECT];
+    $self->_update_fship('device', @_[ARG0, ARG1]);
+};
+
+=item retweets I<on|off> I<screen_name ...>
+
+Turns retweet display on your timeline on or off for the list of
+I<screen_name>s.
+
+=cut
+
+event cmd_retweets => sub {
+    my $self = $_[OBJECT];
+    $self->_update_fship('retweets', @_[ARG0, ARG1]);
+};
+
+# Used by notify and retweets to call update_friendships
+# All settings updated at once so existing must be preserved
+sub _update_fship {
+    my ($self, $command, $channel, $argstr) = @_;
 
     my @nicks = split /\s+/, $argstr;
     my $onoff = shift @nicks;
 
     unless ( $onoff && $onoff =~ /^on|off$/ ) {
-        $self->bot_says($channel, "Usage: notify on|off nick[ nick [...]]");
+        $self->bot_says($channel, "Usage: $command on|off nick[ nick [...]]");
         return;
     }
 
     my $setting = $onoff eq 'on' ? 1 : 0;
     for my $nick ( @nicks ) {
-        $self->twitter(update_friendship => { screen_name => $nick,
-                                              device      => $setting});
+        # Fetch previous values
+        my $prev_hash =  $self->twitter(show_friendship =>
+                                        { target_screen_name => $nick })
+                              ->{relationship}{source};
+        $self->twitter(update_friendship =>
+                       { screen_name => $nick,
+                         # previous values as default
+                         notify   => "$prev_hash->{notifications_enabled}",
+                         retweets => "$prev_hash->{want_retweets}",
+                         # override with new value
+                         $command => $setting });
     }
-};
+}
 
 =item favorite I<screen_name> [I<count>]
 
@@ -1439,7 +1467,7 @@ event cmd_help => sub {
     my ($self, $channel, $argstr)=@_[OBJECT, ARG0, ARG1];
     $self->bot_says($channel, "Available commands:");
     $self->bot_says($channel, join ' ' => sort qw/
-        post follow unfollow block unblock whois notify favorite
+        post follow unfollow block unblock whois notify retweets favorite
         rate_limit_status retweet report_spam
     /);
     $self->bot_says($channel, '/msg nick for a direct message.')
