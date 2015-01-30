@@ -1150,9 +1150,9 @@ event cmd_whois => sub {
     }
 };
 
-=item notify I<on|off> I<id ...>
+=item notify I<on|off> I<screen_name ...>
 
-Turns device notifications on or off for the list of Twitter IDs.
+Turns mobile device notifications on or off for the list of I<screen_name>s.
 
 =cut
 
@@ -1167,9 +1167,10 @@ event cmd_notify => sub {
         return;
     }
 
-    my $method = $onoff eq 'on' ? 'enable_notifications' : 'disable_notifications';
+    my $setting = $onoff eq 'on' ? 1 : 0;
     for my $nick ( @nicks ) {
-        $self->twitter($method => { id => $nick });
+        $self->twitter(update_friendship => { screen_name => $nick,
+                                              device      => $setting});
     }
 };
 
