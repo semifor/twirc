@@ -1181,7 +1181,7 @@ sub _update_fship {
     my @nicks = split /\s+/, $argstr;
     my $onoff = shift @nicks;
 
-    unless ( $onoff && $onoff =~ /^on|off$/ ) {
+    unless ( $onoff && $onoff =~ /^on$|^off$/ ) {
         $self->bot_says($channel, "Usage: $command on|off nick[ nick [...]]");
         return;
     }
