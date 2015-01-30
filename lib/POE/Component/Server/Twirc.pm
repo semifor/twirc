@@ -704,7 +704,7 @@ event ircd_daemon_public => sub {
             return if $self->$handler($channel, $text); # handled
         }
         else {
-            $self->log->error("stash exsits with no handler");
+            $self->log->error("stash exists with no handler");
         }
         # the user ignored a command completion request, kill it
         $self->clear_stash;
@@ -1231,11 +1231,11 @@ event cmd_rate_limit_status => sub {
 
     if ( my $r = $self->twitter('rate_limit_status') ) {
         my $reset_time = sprintf "%02d:%02d:%02d", (localtime $r->{reset_time_in_seconds})[2,1,0];
-        my $seconds_remaning = $r->{reset_time_in_seconds} - time;
-        my $time_remaning = sprintf "%d:%02d", int($seconds_remaning / 60), $seconds_remaning % 60;
+        my $seconds_remaining = $r->{reset_time_in_seconds} - time;
+        my $time_remaining = sprintf "%d:%02d", int($seconds_remaining / 60), $seconds_remaining % 60;
         $self->bot_says($channel, sprintf "%s API calls remaining for the next %s (until %s), hourly limit is %s",
             $$r{remaining_hits},
-            $time_remaning,
+            $time_remaining,
             $reset_time,
             $$r{hourly_limit},
         );
