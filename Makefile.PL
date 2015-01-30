@@ -36,6 +36,8 @@ if ( $Module::Install::Author ) {
 }
 
 auto_set_repository;
+homepage   'https://github.com/semifor/twirc';
+bugtracker 'https://github.com/semifor/twirc/issues';
 auto_manifest;
 auto_install;
 
