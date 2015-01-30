@@ -212,6 +212,10 @@ COMMAND REFERENCE
         Turns device notifications on or off for the list of one or more
         Twitter friends. The list is space separated.
 
+    retweets on|off twitter_screen_name...
+        Turns retweet display on your timeline on or off for the list of one
+        or more Twitter friends. The list is space separated.
+
     favorite friend [ count ]
         Mark a friend's tweet as a favorite. Optionally, specify the number
         of tweets to display for selection with "count". ("count" defaults

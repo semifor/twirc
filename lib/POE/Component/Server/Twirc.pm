@@ -1173,7 +1173,7 @@ event cmd_retweets => sub {
     $self->_update_fship('retweets', @_[ARG0, ARG1]);
 };
 
-# Used by notify and retweets to call update_friendships
+# Call update_friendships
 # All settings updated at once so existing must be preserved
 sub _update_fship {
     my ($self, $command, $channel, $argstr) = @_;
@@ -1188,18 +1188,37 @@ sub _update_fship {
 
     my $setting = $onoff eq 'on' ? 1 : 0;
     for my $nick ( @nicks ) {
-        # Fetch previous values
-        my $prev_hash =  $self->twitter(show_friendship =>
-                                        { target_screen_name => $nick })
-                              ->{relationship}{source};
+        # Fetch existing values
+        my $prev_vals_h = $self->_fetch_prev_setts($nick);
+
+        # Skip unnecessary updates
+        if ($prev_vals_h->{$command} == $setting) {
+            $self->bot_says($channel, "No need to update $nick");
+            next;
+        }
+
+        # Update
         $self->twitter(update_friendship =>
                        { screen_name => $nick,
                          # previous values as default
-                         notify   => "$prev_hash->{notifications_enabled}",
-                         retweets => "$prev_hash->{want_retweets}",
+                         %$prev_vals_h,
                          # override with new value
-                         $command => $setting });
+                         $command => $setting
+                       });
     }
+}
+
+# Fetch previous notify / retweet settings
+sub _fetch_prev_setts {
+    my ($self, $nick) = @_;
+    # Dig through twitter info
+    my $twit_data = $self->twitter(show_friendship =>
+                                  { target_screen_name => $nick })
+                        ->{relationship}{source};
+    # Pull out existing settings
+    # Quoted values to get 0/1 vs weird JSON:: things that break the API
+    return { device   => "$twit_data->{notifications_enabled}",
+             retweets => "$twit_data->{want_retweets}" };
 }
 
 =item favorite I<screen_name> [I<count>]
