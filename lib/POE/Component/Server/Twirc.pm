@@ -1513,6 +1513,7 @@ Marc Mims <marc@questright.com>
 =head1 CONTRIBUTORS
 
 Adam Prime <adam.prime@utoronto.ca> (@adamprime)
+Peter Roberts <me+dev@peter-r.co.uk>
 
 =head1 LICENSE
 

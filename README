@@ -28,6 +28,7 @@ CONTRIBUTING AND BUILDING
     modules:
 
     Module::Install
+    Module::Install::Contributors
     Module::Install::Repository
     Module::Install::AutoManifest
 
@@ -304,6 +305,9 @@ SUPPORT
     there before they hit CPAN, so check the commit log there to see if a
     problem you've found has been addressed. And feel free to use the
     development branch.
+
+CONTRIBUTORS
+    Peter Roberts <me+dev@peter-r.co.uk>
 
 AUTHOR
     Marc Mims <marc@questright.com>

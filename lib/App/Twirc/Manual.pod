@@ -43,6 +43,8 @@ for some other reason, you must have the following Perl modules:
 
 =item L<Module::Install>
 
+=item L<Module::Install::Contributors>
+
 =item L<Module::Install::Repository>
 
 =item L<Module::Install::AutoManifest>
@@ -360,6 +362,10 @@ The code repository with the development branch is located at
 L<http://github.com/semifor/twirc>.  New features, and bug fixes appear there
 before they hit CPAN, so check the commit log there to see if a problem you've
 found has been addressed.  And feel free to use the development branch.
+
+=head1 CONTRIBUTORS
+
+Peter Roberts <me+dev@peter-r.co.uk>
 
 =head1 AUTHOR
 
