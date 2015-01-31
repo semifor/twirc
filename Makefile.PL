@@ -13,6 +13,8 @@ requires 'Config::Any';
 requires 'Encode';
 requires 'FindBin';
 requires 'HTML::Entities';
+requires 'JSON::Any';
+requires 'JSON::MaybeXS';
 requires 'Log::Log4perl';
 requires 'LWP::UserAgent::POE'         => '0.02';
 requires 'Moose';
