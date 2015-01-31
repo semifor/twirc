@@ -8,6 +8,11 @@ all_from 'lib/POE/Component/Server/Twirc.pm';
 
 install_script  'bin/twirc';
 
+# Needed to run this script
+configure_requires 'Module::Install::Repository';
+configure_requires 'Module::Install::AutoManifest';
+configure_requires 'Module::Install::Contributors';
+
 requires 'AnyEvent::Twitter::Stream'   => '0.23'; # APIv1.1
 requires 'Config::Any';
 requires 'Encode';
@@ -35,9 +40,13 @@ if ( $Module::Install::Author ) {
     system 'pod2text lib/App/Twirc/Manual.pod > README';
 }
 
+contributors 'Adam Prime <adam.prime@utoronto.ca>';
+contributors 'Peter Roberts <me+dev@peter-r.co.uk>';
+
 auto_set_repository;
 homepage   'https://github.com/semifor/twirc';
 bugtracker 'https://github.com/semifor/twirc/issues';
+
 auto_manifest;
 auto_install;
 
