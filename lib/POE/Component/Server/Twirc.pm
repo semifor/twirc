@@ -1,7 +1,7 @@
 package POE::Component::Server::Twirc;
 use MooseX::POE;
 
-use LWP::UserAgent::POE;
+use Log::Log4perl;
 use POE qw(Component::Server::IRC);
 use Net::Twitter;
 use String::Truncate elide => { marker => '…' };
@@ -353,7 +353,6 @@ sub _net_twitter_opts {
     my %config = (
         $self->_twitter_auth,
         traits               => [qw/API::RESTv1_1 OAuth RetryOnError/],
-        useragent_class      => 'LWP::UserAgent::POE',
         useragent            => "twirc/$VERSION",
         decode_html_entities => 1,
         ssl                  => 1,
