@@ -216,7 +216,17 @@ has _users_by_nick =>
         user_nicks          => 'keys',
     };
 
-has joined => init_arg => undef, isa => 'Bool', is => 'rw', default => 0;
+has has_joined_channel => (
+    init_arg => undef,
+    is       => 'ro',
+    traits   => [ qw/Bool/ ],
+    default  => 0,
+    handles  => {
+        joined_channel => 'set',
+        left_channel   => 'unset',
+    },
+);
+
 has stash  => init_arg => undef, isa => 'HashRef', is => 'rw', predicate => 'has_stash', clearer => 'clear_stash';
 
 has state =>
@@ -229,15 +239,27 @@ has state =>
 has client_encoding => isa => 'Str', is  => 'rw', default => sub { 'utf-8' };
 
 has reconnect_delay => is => 'rw', isa => 'Num', default => 0;
-has twitter_stream_watcher => is => 'rw', clearer => 'disconnect_twitter_stream',
-        predicate => 'has_twitter_stream_watcher';
+has twitter_stream_watcher => (
+    is        => 'rw',
+    clearer   => 'disconnect_twitter_stream',
+    predicate => 'has_twitter_stream_watcher',
+);
 
 has authenticated_user => is => 'rw', isa => 'HashRef', init_arg => undef;
+
+has is_shutting_down => (
+    is      => 'ro',
+    traits  => [ qw/Bool/ ],
+    default => 0,
+    handles => {
+        shutting_down => 'set',
+    },
+);
 
 # force build of users by nick hash early
 sub BUILD { shift->_users_by_nick }
 
-sub get_authenticated_user {
+event get_authenticated_user => sub {
     my $self = shift;
 
     if ( my $r = $self->twitter(verify_credentials => { include_entities => 1 }) ) {
@@ -431,33 +453,32 @@ sub formatted_status_text {
     return $text;
 }
 
-sub connect_twitter_stream {
+event connect_twitter_stream => sub {
     weaken(my $self = shift);
 
     $self->log->trace('connect_twitter_stream');
 
-    my $w; $w = AnyEvent::Twitter::Stream->new(
+    my $w = AnyEvent::Twitter::Stream->new(
         $self->_twitter_auth,
         token        => $self->state->access_token,
         token_secret => $self->state->access_token_secret,
         method       => 'userstream',
         timeout      => $self->twitter_stream_timeout,
         on_connect   => sub {
-            $self->twitter_stream_watcher($w);
             $self->log->info('Connected to Twitter');
             $self->bot_notice($self->irc_channel, "Twitter stream connected");
             $self->reconnect_delay(0);
         },
         on_eof       => sub {
-            undef $w;
+            $self->disconnect_twitter_stream;
             $self->log->trace("on_eof");
             $self->bot_notice($self->irc_channel, "Twitter stream disconnected");
-            $self->connect_twitter_stream if $self->has_twitter_stream_watcher;
+            $self->yield('connect_twitter_stream') unless $self->is_shutting_down;
         },
         on_error   => sub {
             my $e = shift;
 
-            undef $w;
+            $self->disconnect_twitter_stream;
 
             $self->log->error("on_error: $e");
             $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
@@ -475,7 +496,7 @@ sub connect_twitter_stream {
                 my $next_delay = $self->reconnect_delay * 2 || 1;
                 $next_delay = $self->max_reconnect_delay if $next_delay > $self->max_reconnect_delay;
                 $self->reconnect_delay($next_delay);
-                $self->connect_twitter_stream;
+                $self->yield('connect_twitter_stream');
             };
         },
         on_keepalive   => sub {
@@ -489,12 +510,15 @@ sub connect_twitter_stream {
             my $msg = shift;
 
             $self->log->trace("on_event: $$msg{event}");
-            $self->yield(on_event => $msg);
+
+            $self->yield(on_event => $msg) if $self->has_joined_channel;
         },
         on_tweet     => sub {
             my $msg = shift;
 
             $self->log->trace("on_tweet");
+
+            return unless $self->has_joined_channel;
 
             if ( exists $$msg{sender} ) {
                 $self->log->debug('received old style direct_message');
@@ -525,10 +549,12 @@ sub connect_twitter_stream {
             $self->log->trace("on_delete");
         },
     );
-}
+
+    $self->twitter_stream_watcher($w);
+};
 
 sub START {
-    my ($self) = @_;
+    weaken(my $self = shift);
 
     $self->ircd(
         POE::Component::Server::IRC->spawn(
@@ -577,8 +603,8 @@ sub START {
     POE::Kernel->sig(TERM => 'poco_shutdown');
     POE::Kernel->sig(INT  => 'poco_shutdown');
 
-    $self->get_authenticated_user;
-    $self->connect_twitter_stream;
+    $self->yield('get_authenticated_user');
+    $self->yield('connect_twitter_stream');
 
     return $self;
 }
@@ -596,7 +622,7 @@ event poco_shutdown => sub {
     my ($self) = @_;
 
     $self->log->trace("[poco_shutdown]");
-    $self->disconnect_twitter_stream;
+    $self->shutting_down;
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
@@ -646,7 +672,7 @@ event ircd_daemon_join => sub {
     return if $self->ircd->_state_user_route($nick) eq 'spoofed';
 
     if ( $ch eq $self->irc_channel ) {
-        $self->joined(1);
+        $self->joined_channel;
         $self->log->trace("    joined!");
         return;
     }
@@ -671,7 +697,7 @@ event ircd_daemon_part => sub {
         $self->delete_user($user);
     }
 
-    $self->joined(0) if $ch eq $self->irc_channel && $nick eq $self->irc_nickname;
+    $self->left_channel if $ch eq $self->irc_channel && $nick eq $self->irc_nickname;
 };
 
 event ircd_daemon_quit => sub {
@@ -681,7 +707,7 @@ event ircd_daemon_quit => sub {
     return unless my($nick) = $user =~ /^([^!]+)!/;
     return unless $nick eq $self->irc_nickname;
 
-    $self->joined(0);
+    $self->left_channel;
     $self->yield('poco_shutdown');
 };
 
