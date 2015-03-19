@@ -485,6 +485,7 @@ event connect_twitter_stream => sub {
             if ( $e =~ /^420:/ ) {
                 $self->log->fatal("excessive login rate; shutting down");
                 $self->call('poco_shutdown');
+                return;
             }
 
             # progressively backoff on reconnection attepts to max_reconnect_delay
