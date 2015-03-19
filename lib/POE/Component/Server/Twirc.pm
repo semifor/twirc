@@ -761,7 +761,7 @@ event ircd_daemon_privmsg => sub {
         return;
     }
 
-    $self->twitter(new_direct_message => { user => $target_nick, text => $text });
+    $self->twitter(new_direct_message => { screen_name => $target_nick, text => $text });
 };
 
 event friend_join => sub {
@@ -1063,7 +1063,7 @@ event cmd_follow => sub {
         return;
     }
 
-    $self->twitter(create_friend => $id);
+    $self->twitter(create_friend => { screen_name => $id });
 };
 
 =item unfollow I<id>
@@ -1082,7 +1082,7 @@ event cmd_unfollow => sub {
         return;
     }
 
-    $self->twitter(destroy_friend => $id) || return;
+    $self->twitter(destroy_friend => { screen_name => $id }) || return;
 
     $self->post_ircd(daemon_cmd_part => $id, $self->irc_channel);
     $self->post_ircd(del_spooked_nick => $id);
