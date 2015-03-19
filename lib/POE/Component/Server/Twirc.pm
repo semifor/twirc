@@ -9,7 +9,7 @@ use POE::Component::Server::Twirc::LogAppender;
 use POE::Component::Server::Twirc::State;
 use Encode qw/decode/;
 use Try::Tiny;
-use Scalar::Util qw/reftype/;
+use Scalar::Util qw/reftype weaken/;
 use AnyEvent;
 use AnyEvent::Twitter::Stream;
 use HTML::Entities;
@@ -432,7 +432,7 @@ sub formatted_status_text {
 }
 
 sub connect_twitter_stream {
-    my $self = shift;
+    weaken(my $self = shift);
 
     $self->log->trace('connect_twitter_stream');
 
@@ -449,12 +449,16 @@ sub connect_twitter_stream {
             $self->reconnect_delay(0);
         },
         on_eof       => sub {
+            undef $w;
             $self->log->trace("on_eof");
             $self->bot_notice($self->irc_channel, "Twitter stream disconnected");
             $self->connect_twitter_stream if $self->has_twitter_stream_watcher;
         },
         on_error   => sub {
             my $e = shift;
+
+            undef $w;
+
             $self->log->error("on_error: $e");
             $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
             if ( $e =~ /^420:/ ) {
