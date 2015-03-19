@@ -962,6 +962,9 @@ sub _favorite_or_retweet {
         elide(qq/$who $verb $whom "$text"/, 80, { marker => '…"' }) . " [$link]");
 }
 
+# No need to alert, here. We also get an on_event_favorite for the same tweet
+sub on_event_favorited_retweet {}
+
 sub on_event_block {
     my ( $self, $event ) = @_;
 
