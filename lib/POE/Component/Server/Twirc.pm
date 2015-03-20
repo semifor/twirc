@@ -271,7 +271,7 @@ event get_authenticated_user => sub {
     }
     else {
         $self->log->fatal("Failed to get authenticated user data from twitter (verify_credentials)");
-        $self->call('poco_shutdown');
+        $self->yield('poco_shutdown');
     }
 };
 
@@ -484,7 +484,7 @@ event connect_twitter_stream => sub {
             $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
             if ( $e =~ /^420:/ ) {
                 $self->log->fatal("excessive login rate; shutting down");
-                $self->call('poco_shutdown');
+                $self->yield('poco_shutdown');
                 return;
             }
 
@@ -511,7 +511,6 @@ event connect_twitter_stream => sub {
             my $msg = shift;
 
             $self->log->trace("on_event: $$msg{event}");
-
             $self->yield(on_event => $msg) if $self->has_joined_channel;
         },
         on_tweet     => sub {
