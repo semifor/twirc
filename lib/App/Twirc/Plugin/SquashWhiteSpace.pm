@@ -1,4 +1,5 @@
 package App::Twirc::Plugin::SquashWhiteSpace;
+
 use warnings;
 use strict;
 

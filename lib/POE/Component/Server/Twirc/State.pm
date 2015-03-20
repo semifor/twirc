@@ -1,4 +1,5 @@
 package POE::Component::Server::Twirc::State;
+
 use Moose;
 use MooseX::Storage;
 

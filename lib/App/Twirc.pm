@@ -1,4 +1,5 @@
 package App::Twirc;
+
 use Moose;
 use Config::Any;
 use POE::Component::Server::Twirc;

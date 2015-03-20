@@ -1,4 +1,5 @@
 package App::Twirc::Plugin::BangCommands;
+
 use warnings;
 use strict;
 

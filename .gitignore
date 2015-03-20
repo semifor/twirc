@@ -1,13 +1,4 @@
-.*.swp
-Makefile*
-blib/*
-MANIFEST
-META.yml
-inc/*
-pm_to_blib
-*.bak
-*.gz
-*.yml
-*.json
-*.conf
-*.state
+local/
+.build/
+POE-Component-Server-Twirc-*/
+POE-Component-Server-Twirc-*.gz

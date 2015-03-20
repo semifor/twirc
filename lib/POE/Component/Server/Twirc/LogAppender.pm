@@ -1,4 +1,5 @@
 package POE::Component::Server::Twirc::LogAppender;
+
 use warnings;
 use strict;
 

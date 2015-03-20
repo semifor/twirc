@@ -1,4 +1,5 @@
 package App::Twirc::Plugin::SecondaryAccount;
+
 use Moose;
 use Net::Twitter;
 use POE::Component::Server::Twirc;
