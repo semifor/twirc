@@ -185,16 +185,30 @@ has _users_by_nick =>
     lazy     => 1,
     default  => sub { +{ map { lc($$_{screen_name}) => $_ } shift->get_users } },
     handles  => {
-        set_user_by_nick    => 'set',
-        get_user_by_nick    => 'get',
-        delete_user_by_nick => 'delete',
-        user_nicks          => 'keys',
+        set_user         => 'set',
+        get_user_by_nick => 'get',
+        delete_user      => 'delete',
+        user_nicks       => 'keys',
     };
+
+around set_user => sub {
+    my ( $orig, $self, $user ) = @_;
+
+    $self->set_user_by_id($user->{id}, $user);
+    $self->$orig(lc $user->{screen_name}, $user);
+};
 
 around get_user_by_nick => sub {
     my ( $orig, $self, $nick ) = @_;
 
     $self->$orig(lc $nick);
+};
+
+around delete_user => sub {
+    my ( $orig, $self, $user ) = @_;
+
+    $self->delete_user_by_id($user->{id});
+    $self->$orig(lc $user->{screen_name});
 };
 
 has has_joined_channel => (
@@ -400,19 +414,11 @@ sub add_user {
     }
 
     $$user{FRESH} = time;
-    $self->set_user_by_id($user->{id}, $user);
-    $self->set_user_by_nick(lc($user->{screen_name}), $user);
+    $self->set_user($user);
 
     unless ( $self->ircd->state_nick_exists($nick) ) {
         $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $$user{name} });
     }
-}
-
-sub delete_user {
-    my ($self, $user) = @_;
-
-    $self->delete_user_by_id($user->{id});
-    $self->delete_user_by_nick(lc($user->{screen_name}));
 }
 
 sub _twitter_auth {
