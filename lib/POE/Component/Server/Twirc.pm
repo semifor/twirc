@@ -4,17 +4,20 @@ use MooseX::POE;
 
 use Log::Log4perl;
 use POE qw(Component::Server::IRC);
-use Net::Twitter;
+use Net::OAuth;
+use Digest::SHA;
 use String::Truncate elide => { marker => '…' };
 use POE::Component::Server::Twirc::LogAppender;
 use POE::Component::Server::Twirc::State;
 use Encode qw/decode/;
 use Try::Tiny;
-use Scalar::Util qw/reftype weaken/;
+use Scalar::Util qw/weaken/;
 use AnyEvent;
 use AnyEvent::Twitter::Stream;
+use AnyEvent::HTTP;
 use HTML::Entities;
 use Regexp::Common qw/URI/;
+use JSON::XS qw/decode_json/;
 
 with 'MooseX::Log::Log4perl';
 
@@ -122,23 +125,6 @@ has irc_botircname => isa => 'Str', is => 'ro', default => 'Your friendly Twitte
 
 has irc_channel => isa => 'Str', is => 'ro', default => '&twitter';
 
-
-=item twitter_args
-
-(Optional) A hashref of extra arguments to pass to C<< Net::Twitter->new >>.
-
-=cut
-
-has twitter_args => isa => 'HashRef', is => 'ro', default => sub { {} };
-
-=item extra_net_twitter_traits
-
-(Optional) Additional traits used to construct the Net::Twitter instance.
-
-=cut
-
-has extra_net_twitter_traits => is => 'ro', default => sub { [] };
-
 =item selection_count
 
 (Optional) How many favorites candidates to display for selection. Defaults to 3.
@@ -189,16 +175,6 @@ has plugins => isa => 'ArrayRef[Object]', is => 'ro', default => sub { [] };
 
 has irc_nickname => isa => 'Str', is => 'rw', init_arg => undef;
 
-has _twitter => is => 'rw', isa => 'Object', lazy => 1, default => sub {
-    my $self = shift;
-
-    Net::Twitter->new(
-        $self->_net_twitter_opts,
-        access_token        => $self->state->access_token,
-        access_token_secret => $self->state->access_token_secret,
-    );
-};
-
 has ircd => isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1;
 
 has _users_by_nick =>
@@ -214,6 +190,12 @@ has _users_by_nick =>
         delete_user_by_nick => 'delete',
         user_nicks          => 'keys',
     };
+
+around get_user_by_nick => sub {
+    my ( $orig, $self, $nick ) = @_;
+
+    $self->$orig(lc $nick);
+};
 
 has has_joined_channel => (
     init_arg => undef,
@@ -277,21 +259,94 @@ event get_authenticated_user => sub {
     });
 };
 
+my %endpoint_for = (
+    add_list_member    => [ POST => 'lists/members/create'          ],
+    create_block       => [ POST => 'blocks/create'                 ],
+    create_favorite    => [ POST => 'favorites/create'              ],
+    create_friend      => [ POST => 'friendships/create'            ],
+    destroy_block      => [ POST => 'blocks/destroy'                ],
+    destroy_friend     => [ POST => 'friendships/destroy'           ],
+    followers_ids      => [ GET  => 'followers/ids'                 ],
+    lookup_users       => [ GET  => 'users/lookup'                  ],
+    new_direct_message => [ POST => 'direct_messages/new'           ],
+    rate_limit_status  => [ GET  => 'application/rate_limit_status' ],
+    remove_list_member => [ POST => 'lists/members/destroy'         ],
+    report_spam        => [ POST => 'users/report_spam'             ],
+    retweet            => [ POST => 'statuses/retweet/:id'          ],
+    show_friendship    => [ GET  => 'friendships/show'              ],
+    show_user          => [ GET  => 'users/show'                    ],
+    update             => [ POST => 'statuses/update'               ],
+    update_friendship  => [ POST => 'friendships/update'            ],
+    user_timeline      => [ GET  => 'statuses/user_timeline'        ],
+    verify_credentials => [ GET  => 'account/verify_credentials'    ],
+);
+
+sub oauth_for {
+    my ( $self, $method, $url, $args ) = @_;
+
+    my $request = Net::OAuth->request('protected resource')->new(
+        $self->_twitter_auth,
+        token            => $self->state->access_token,
+        token_secret     => $self->state->access_token_secret,
+        version          => '1.0',
+        signature_method => 'HMAC-SHA1',
+        timestamp        => time,
+        nonce            => Digest::SHA::sha1_base64(time . $$ . rand),
+        request_method   => $method,
+        request_url      => $url,
+        extra_params     => $args || {},
+    );
+
+    $request->sign;
+    return $request;
+}
+
 sub twitter {
     my ( $self, $method, $args, $cb ) = @_;
 
-    my $r = try { $self->_twitter->$method($args) }
-    catch {
-        $self->log->error("twitter error: $_");
-        if ( blessed $_ && $_->can('code') && $_->code == 502 ) {
-            $_ = 'Fail Whale';
-        }
-        s/ at .* line \d+//;
-        $self->twitter_error("$method -> $_");
-        undef;
-    };
+    my ( $http_method, $endpoint ) = @{ $endpoint_for{$method} || [] }
+        or return $self->log->error("no endopoint defined for $method");
 
-    return $cb ? $cb->($r) : $r;
+    # Flatten array args into comma delimited strings
+    for my $k ( keys %$args ) {
+        $args->{$k} = join ',' => @{ $args->{$k} } if ref $args->{$k} eq ref [];
+    }
+
+    delete $args->{id} if $endpoint =~ s/:id/$args->{id}/;
+    my $url = "https://api.twitter.com/1.1/$endpoint.json";
+
+    my $oauth = $self->oauth_for($http_method, $url, $args);
+
+    # Twitter is finicky about query parameters; this hack gets them from
+    # Net::OAuth in exactly the same order and escaped the same way as the base
+    # signature string.
+    my $query = join '&', grep !/^oauth_/, split /&/, $oauth->normalized_message_parameters;
+    $url .= '?' . $query;
+
+    $self->log->debug(qq/Twitter API call: $http_method $url/);
+
+    http_request $http_method, $url,
+        headers => {
+            Authorization => $oauth->to_authorization_header,
+            Accept        => 'application/json',
+        },
+        timeout => 10,
+        sub {
+            my ( $body, $headers ) = @_;
+
+            my $r = try { decode_json $body }
+            catch {
+                $self->log->error("decode_json failed for: $body") if defined $body;
+            };
+
+            my ( $status, $reason ) = @{ $headers }{qw/Status Reason/};
+            if ( $status =~ /^2/ ) {
+                $cb && $cb->($r);
+            }
+            else {
+                $self->twitter_error("$status: $reason => $body");
+            }
+        };
 }
 
 sub post_ircd {
@@ -369,32 +424,6 @@ sub _twitter_auth {
         pbafhzre_xrl     => 'ntqifMSFhMC0NdSWmBWgtN',
         pbafhzre_frperg  => 'CDDA2pAiDcjb6saxt0LLwezCBV97VPYGAF0LMa0oH',
     ),
-}
-
-sub _net_twitter_opts {
-    my $self = shift;
-
-    my %config = (
-        $self->_twitter_auth,
-        traits               => [qw/API::RESTv1_1 OAuth RetryOnError/],
-        useragent            => "twirc/$VERSION",
-        decode_html_entities => 1,
-        ssl                  => 1,
-        %{ $self->twitter_args },
-    );
-
-    foreach my $plugin (@{$self->plugins}){
-        if ($plugin->can('plugin_traits')) {
-            push @{ $config{traits} }, $plugin->plugin_traits();
-        }
-    }
-
-    my %unique_traits = map { $_ => undef }
-        @{ $config{traits} },
-        @{ $self->extra_net_twitter_traits };
-    $config{traits} = [ keys %unique_traits ];
-
-    return %config;
 }
 
 sub max_reconnect_delay    () { 600 } # ten minutes
@@ -627,7 +656,6 @@ event poco_shutdown => sub {
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
-    $_[KERNEL]->call($self->_twitter->ua->{poco_alias}, 'shutdown');
     if ( $self->state_file ) {
         try { $self->state->store($self->state_file) }
         catch {
@@ -694,7 +722,7 @@ event ircd_daemon_part => sub {
     return unless my($nick) = $user_name =~ /^([^!]+)!/;
     return if $nick eq $self->irc_botname;
 
-    if ( my $user = $self->get_user_by_nick(lc $nick) ) {
+    if ( my $user = $self->get_user_by_nick($nick) ) {
         $self->delete_user($user);
     }
 
@@ -782,7 +810,7 @@ event ircd_daemon_privmsg => sub {
 
     $text = decode($self->client_encoding, $text);
 
-    unless ( $self->get_user_by_nick(lc $target_nick) ) {
+    unless ( $self->get_user_by_nick($target_nick) ) {
         # TODO: handle the error the way IRC would?? (What channel?)
         $self->bot_says($self->irc_channel, qq/You don't appear to be following $target_nick; message not sent./);
         return;
@@ -950,6 +978,18 @@ sub on_event_follow {
     }
 }
 
+sub on_event_unfollow {
+    my ( $self, $event ) = @_;
+
+    my $screen_name = $event->{target}{screen_name};
+    if( my $user = $self->get_user_by_nick($screen_name) ) {
+        $self->delete_user($user);
+    }
+    $self->post_ircd(daemon_cmd_part => $screen_name, $self->irc_channel);
+    $self->post_ircd(del_spooked_nick => $screen_name);
+    $self->bot_notice($self->irc_channel, qq/No longer following $screen_name./);
+}
+
 sub on_event_favorite   { shift->_favorite_or_retweet(favorited   => @_) }
 sub on_event_unfavorite { shift->_favorite_or_retweet(unfavorited => @_) }
 sub on_event_retweet    { shift->_favorite_or_retweet(retweeted   => @_) }
@@ -1111,20 +1151,13 @@ friendship.
 event cmd_unfollow => sub {
     my ($self, $channel, $id) = @_[OBJECT, ARG0, ARG1];
 
-    my $user = $self->get_user_by_nick(lc $id);
+    my $user = $self->get_user_by_nick($id);
     unless ( $user ) {
         $self->bot_says($channel, qq/You don't appear to be following $id./);
         return;
     }
 
-    $self->twitter(destroy_friend => { screen_name => $id }, sub {
-        return unless shift;
-
-        $self->post_ircd(daemon_cmd_part => $id, $self->irc_channel);
-        $self->post_ircd(del_spooked_nick => $id);
-        $self->bot_notice($channel, qq/No longer following $id./);
-        $self->delete_user($user);
-    });
+    $self->twitter(destroy_friend => { screen_name => $id });
 };
 
 =item block I<id>
@@ -1185,7 +1218,7 @@ event cmd_whois => sub {
         }
     };
 
-    if ( my $user = $self->get_user_by_nick(lc $nick) ) {
+    if ( my $user = $self->get_user_by_nick($nick) ) {
         $cb->($user);
     }
     else {
