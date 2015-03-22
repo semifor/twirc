@@ -1046,6 +1046,15 @@ event on_direct_message => sub {
             for split /\r?\n/, $text;
 };
 
+sub on_event_retweet_retweeted {
+    my ( $self, $msg ) = @_;
+
+    my $screen_name = $msg->{source}{screen_name};
+    my $text = $msg->{target_object}{text};
+
+    $self->bot_notice($self->irc_channel, "$screen_name retweeted your retweet: $text");
+}
+
 ########################################################################
 # Commands
 ########################################################################
