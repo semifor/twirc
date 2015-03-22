@@ -316,7 +316,9 @@ sub oauth_for {
 }
 
 sub twitter {
-    my ( $self, $method, $args, $cb ) = @_;
+    my $cb = ref $_[-1] eq 'CODE' ? pop : sub {};
+    my ( $self, $method, $args ) = @_;
+    weaken $self;
 
     my ( $http_method, $endpoint ) = @{ $endpoint_for{$method} || [] }
         or return $self->log->error("no endopoint defined for $method");
@@ -369,7 +371,7 @@ sub twitter {
 
             my ( $status, $reason ) = @{ $headers }{qw/Status Reason/};
             if ( $status =~ /^2/ ) {
-                $cb && $cb->($r);
+                $cb->($r);
             }
             else {
                 $self->twitter_error("$status: $reason => $body");
