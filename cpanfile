@@ -1,3 +1,5 @@
+requires 'AnyEvent'                    => 0;
+requires 'AnyEvent::Twitter'           => 0;
 requires 'AnyEvent::Twitter::Stream'   => 0.23;
 requires 'Config::Any'                 => 0;
 requires 'Encode'                      => 0;

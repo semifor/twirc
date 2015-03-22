@@ -13,11 +13,10 @@ use Encode qw/decode/;
 use Try::Tiny;
 use Scalar::Util qw/weaken/;
 use AnyEvent;
+use AnyEvent::Twitter;
 use AnyEvent::Twitter::Stream;
-use AnyEvent::HTTP;
 use HTML::Entities;
 use Regexp::Common qw/URI/;
-use JSON::XS qw/decode_json/;
 
 with 'MooseX::Log::Log4perl';
 
@@ -273,47 +272,41 @@ event get_authenticated_user => sub {
     });
 };
 
-my %endpoint_for = (
-    add_list_member    => [ POST => 'lists/members/create'          ],
-    create_block       => [ POST => 'blocks/create'                 ],
-    create_favorite    => [ POST => 'favorites/create'              ],
-    create_friend      => [ POST => 'friendships/create'            ],
-    destroy_block      => [ POST => 'blocks/destroy'                ],
-    destroy_friend     => [ POST => 'friendships/destroy'           ],
-    followers_ids      => [ GET  => 'followers/ids'                 ],
-    lookup_users       => [ GET  => 'users/lookup'                  ],
-    new_direct_message => [ POST => 'direct_messages/new'           ],
-    rate_limit_status  => [ GET  => 'application/rate_limit_status' ],
-    remove_list_member => [ POST => 'lists/members/destroy'         ],
-    report_spam        => [ POST => 'users/report_spam'             ],
-    retweet            => [ POST => 'statuses/retweet/:id'          ],
-    show_friendship    => [ GET  => 'friendships/show'              ],
-    show_user          => [ GET  => 'users/show'                    ],
-    update             => [ POST => 'statuses/update'               ],
-    update_friendship  => [ POST => 'friendships/update'            ],
-    user_timeline      => [ GET  => 'statuses/user_timeline'        ],
-    verify_credentials => [ GET  => 'account/verify_credentials'    ],
+has twitter_rest_api => (
+    is => 'ro',
+    lazy => 1,
+    default => sub {
+        my $self = shift;
+
+        AnyEvent::Twitter->new(
+            $self->_twitter_auth,
+            token            => $self->state->access_token,
+            token_secret     => $self->state->access_token_secret,
+        );
+    },
 );
 
-sub oauth_for {
-    my ( $self, $method, $url, $args ) = @_;
-
-    my $request = Net::OAuth->request('protected resource')->new(
-        $self->_twitter_auth,
-        token            => $self->state->access_token,
-        token_secret     => $self->state->access_token_secret,
-        version          => '1.0',
-        signature_method => 'HMAC-SHA1',
-        timestamp        => time,
-        nonce            => Digest::SHA::sha1_base64(time . $$ . rand),
-        request_method   => $method,
-        request_url      => $url,
-        extra_params     => $args || {},
-    );
-
-    $request->sign;
-    return $request;
-}
+my %endpoint_for = (
+    add_list_member    => [ post => 'lists/members/create'          ],
+    create_block       => [ post => 'blocks/create'                 ],
+    create_favorite    => [ post => 'favorites/create'              ],
+    create_friend      => [ post => 'friendships/create'            ],
+    destroy_block      => [ post => 'blocks/destroy'                ],
+    destroy_friend     => [ post => 'friendships/destroy'           ],
+    followers_ids      => [ get  => 'followers/ids'                 ],
+    lookup_users       => [ get  => 'users/lookup'                  ],
+    new_direct_message => [ post => 'direct_messages/new'           ],
+    rate_limit_status  => [ get  => 'application/rate_limit_status' ],
+    remove_list_member => [ post => 'lists/members/destroy'         ],
+    report_spam        => [ post => 'users/report_spam'             ],
+    retweet            => [ post => 'statuses/retweet/:id'          ],
+    show_friendship    => [ get  => 'friendships/show'              ],
+    show_user          => [ get  => 'users/show'                    ],
+    update             => [ post => 'statuses/update'               ],
+    update_friendship  => [ post => 'friendships/update'            ],
+    user_timeline      => [ get  => 'statuses/user_timeline'        ],
+    verify_credentials => [ get  => 'account/verify_credentials'    ],
+);
 
 sub twitter {
     my $cb = ref $_[-1] eq 'CODE' ? pop : sub {};
@@ -328,55 +321,18 @@ sub twitter {
         $args->{$k} = join ',' => @{ $args->{$k} } if ref $args->{$k} eq ref [];
     }
 
-    delete $args->{id} if $endpoint =~ s/:id/$args->{id}/;
-    my $url = "https://api.twitter.com/1.1/$endpoint.json";
+    $self->log->debug(qq/Twitter API call: $http_method $endpoint ${ \join ', ' => map { "$_ => '$$args{$_}'" } keys %$args }/);
 
-    my $oauth = $self->oauth_for($http_method, $url, $args);
+    $self->twitter_rest_api->$http_method($endpoint, $args, sub {
+        my ( $header, $r, $reason, $http_response ) = @_;
 
-    # Twitter is finicky about query parameters; this hack gets them from
-    # Net::OAuth in exactly the same order and escaped the same way as the base
-    # signature string.
-    my $query = join '&', grep !/^oauth_/, split /&/, $oauth->normalized_message_parameters;
-
-    my %headers = (
-        Authorization => $oauth->to_authorization_header,
-        Accept        => 'application/json',
-    );
-
-    my %request_args = (
-        headers => \%headers,
-        timeout => 10,
-    );
-
-    if ( $http_method eq 'POST' ) {
-        $headers{'content-type'} = 'application/x-www-form-urlencoded';
-        $request_args{body} = $query;
-    }
-    else {
-        $url .= '?' . $query;
-    }
-
-    $self->log->debug(qq/Twitter API call: $http_method $url${ \($http_method eq 'POST' ? "[$query]" : '') }/);
-
-    http_request $http_method, $url,
-        %request_args,
-        timeout => 10,
-        sub {
-            my ( $body, $headers ) = @_;
-
-            my $r = try { decode_json $body }
-            catch {
-                $self->log->error("decode_json failed for: $body") if defined $body;
-            };
-
-            my ( $status, $reason ) = @{ $headers }{qw/Status Reason/};
-            if ( $status =~ /^2/ ) {
-                $cb->($r);
-            }
-            else {
-                $self->twitter_error("$status: $reason => $body");
-            }
-        };
+        if ( $r ) {
+            $cb->($r);
+        }
+        else {
+            $self->twitter_error(qq/$$header{Status}: $reason => ${ \join ', ' => map { "$$_{code}: $$_{message}" } @{ $http_response->{errors} } }/);
+        }
+    });
 }
 
 sub post_ircd {
