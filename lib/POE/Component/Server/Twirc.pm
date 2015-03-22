@@ -520,7 +520,7 @@ event connect_twitter_stream => sub {
             my $msg = shift;
 
             $self->log->trace("on_event: $$msg{event}");
-            $self->yield(on_event => $msg) if $self->has_joined_channel;
+            $self->yield(on_event => $msg);
         },
         on_tweet     => sub {
             my $msg = shift;
