@@ -335,15 +335,29 @@ sub twitter {
     # Net::OAuth in exactly the same order and escaped the same way as the base
     # signature string.
     my $query = join '&', grep !/^oauth_/, split /&/, $oauth->normalized_message_parameters;
-    $url .= '?' . $query;
 
-    $self->log->debug(qq/Twitter API call: $http_method $url/);
+    my %headers = (
+        Authorization => $oauth->to_authorization_header,
+        Accept        => 'application/json',
+    );
+
+    my %request_args = (
+        headers => \%headers,
+        timeout => 10,
+    );
+
+    if ( $http_method eq 'POST' ) {
+        $headers{'content-type'} = 'application/x-www-form-urlencoded';
+        $request_args{body} = $query;
+    }
+    else {
+        $url .= '?' . $query;
+    }
+
+    $self->log->debug(qq/Twitter API call: $http_method $url${ \($http_method eq 'POST' ? "[$query]" : '') }/);
 
     http_request $http_method, $url,
-        headers => {
-            Authorization => $oauth->to_authorization_header,
-            Accept        => 'application/json',
-        },
+        %request_args,
         timeout => 10,
         sub {
             my ( $body, $headers ) = @_;
