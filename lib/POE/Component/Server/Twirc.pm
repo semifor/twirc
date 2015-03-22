@@ -874,24 +874,24 @@ event lookup_friends => sub {
 };
 
 event get_followers_ids => sub {
-    my ( $self ) = $_[OBJECT];
+    weaken(my $self = $_[OBJECT]);
 
-    my %followers;
+    my $followers = {};
     my $cb; $cb = sub {
         if ( my $r = shift ) {
             for my $id ( @{$$r{ids}} ) {
-                $followers{$id} = undef;
+                $$followers{$id} = undef;
             }
             if ( my $cursor = $r->{next_cursor} ) {
                 $self->twitter(follower_ids => { cursor => $cursor }, $cb);
             }
         }
-        if ( %followers ) {
-            $self->state->followers(\%followers);
+        if ( %$followers ) {
+            $self->state->followers($followers);
             $self->state->followers_updated_at(time);
 
             $self->yield('set_voice');
-            %followers = ();
+            $followers = {};
         }
     };
     $self->twitter(followers_ids => { cursor => -1 }, $cb);
