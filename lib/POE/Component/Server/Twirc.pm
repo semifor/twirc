@@ -250,6 +250,20 @@ has is_shutting_down => (
     },
 );
 
+has twitter_rest_api => (
+    is      => 'ro',
+    lazy    => 1,
+    default => sub {
+        my $self = shift;
+
+        AnyEvent::Twitter->new(
+            $self->_twitter_auth,
+            token            => $self->state->access_token,
+            token_secret     => $self->state->access_token_secret,
+        );
+    },
+);
+
 # force build of users by nick hash early
 sub BUILD { shift->_users_by_nick }
 
@@ -271,20 +285,6 @@ event get_authenticated_user => sub {
         }
     });
 };
-
-has twitter_rest_api => (
-    is => 'ro',
-    lazy => 1,
-    default => sub {
-        my $self = shift;
-
-        AnyEvent::Twitter->new(
-            $self->_twitter_auth,
-            token            => $self->state->access_token,
-            token_secret     => $self->state->access_token_secret,
-        );
-    },
-);
 
 my %endpoint_for = (
     add_list_member    => [ post => 'lists/members/create'          ],
