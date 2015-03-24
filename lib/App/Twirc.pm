@@ -2,6 +2,8 @@ package App::Twirc;
 
 use Moose;
 use Config::Any;
+use POE qw/Loop::AnyEvent Wheel::ReadWrite/;
+use AnyEvent::Twitter;
 use POE::Component::Server::Twirc;
 use Proc::Daemon;
 use Path::Class::File;
@@ -79,25 +81,7 @@ sub run {
               ? POE::Component::Server::Twirc::State->load($$config{state_file})
               : POE::Component::Server::Twirc::State->new;
 
-    if ( $self->authenticate || !$state->access_token ) {
-        # bloody hack until Twitter restores xauth
-
-        my $nt = Net::Twitter->new(
-            traits => [qw/OAuth/],
-            POE::Component::Server::Twirc->_twitter_auth,
-            ssl => 1,
-        );
-        print "Authorize twirc at ", $nt->get_authorization_url, "\nThen, enter the PIN# provided: ";
-
-        my $pin = <STDIN>;
-        chomp $pin;
-
-        my ( $token, $secret ) = $nt->request_access_token(verifier => $pin);
-        $state->access_token($token);
-        $state->access_token_secret($secret);
-
-        $state->store($$config{state_file}) if $$config{state_file};
-    }
+    $self->oauth_handshake($state, $$config{sate_file}) if $self->authenticate || !$state->access_token;
 
     if ( $self->background ) {
         Proc::Daemon::Init;
@@ -110,6 +94,56 @@ sub run {
 
     $config->{plugins} = $self->_init_plugins($config);
     POE::Component::Server::Twirc->new(%{$config || {}}, state => $state);
+    POE::Kernel->run;
+}
+
+sub oauth_handshake {
+    my ( $self, $state, $state_file )  = @_;
+
+    my %consumer = POE::Component::Server::Twirc->_twitter_auth;
+
+    my ( $wheel, $oauth );
+    POE::Session->create(
+        inline_states => {
+            _start => sub {
+                my $cb = $_[SESSION]->postback('get_pin');
+                my $w; $w = AnyEvent::Twitter->get_request_token(
+                    %consumer,
+                    callback_url => 'oob',
+                    cb => sub { $cb->(@_); undef $w }
+                );
+            },
+            get_pin => sub {
+                my ( $url, $r, $body, $header ) = @{ $_[ARG1] };
+                $oauth = $r;
+                $wheel = POE::Wheel::ReadWrite->new(
+                    InputHandle  => \*STDIN,
+                    OutputHandle => \*STDOUT,
+                    InputEvent   => 'got_pin'
+                );
+                print "Authorize twirc at $url\nThen, enter the PIN# provided: ";
+            },
+            got_pin => sub {
+                undef $wheel;
+                my $pin = $_[ARG0];
+                my $cb = $_[SESSION]->postback('got_access_token');
+                my $w; $w = AnyEvent::Twitter->get_access_token(
+                    %consumer,
+                    oauth_token        => $$oauth{oauth_token},
+                    oauth_token_secret => $$oauth{oauth_token_secret},
+                    oauth_verifier     => $pin,
+                    cb => sub { $cb->(@_); undef $w }
+                );
+            },
+            got_access_token => sub {
+                my ( $r, $body, $header ) = @{ $_[ARG1] };
+                $state->access_token($$r{oauth_token});
+                $state->access_token_secret($$r{oauth_token_secret});
+                $state->store($state_file) if $state_file;
+            },
+        },
+    );
+
     POE::Kernel->run;
 }
 

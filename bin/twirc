@@ -3,8 +3,6 @@ use warnings;
 use strict;
 use FindBin;
 use lib "$FindBin::Bin/../lib";
-use LWP::Protocol::AnyEvent::http;
-use AnyEvent::Impl::POE;
 use App::Twirc;
 
 my $app = App::Twirc->new_with_options();
