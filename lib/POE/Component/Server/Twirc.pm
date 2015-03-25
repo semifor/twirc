@@ -272,7 +272,6 @@ has state => (
         get_users
         set_user_by_id
         store
-        twitter_users
     /],
 );
 
@@ -924,7 +923,7 @@ event friends_ids => sub {
 
     my $buffer = [];
     for my $id ( @$friends_ids ) {
-        my $friend = $self->twitter_users->{$id};
+        my $friend = $self->get_user_by_id($id);
         if ( !$friend || $self->is_user_stale($friend) ) {
             push @$buffer, $id;
             if ( @$buffer == 100 ) {

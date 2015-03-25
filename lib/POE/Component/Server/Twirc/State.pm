@@ -7,14 +7,19 @@ with Storage(format => 'JSON', io => 'File');
 
 has access_token         => isa => 'Str', is => 'rw';
 has access_token_secret  => isa => 'Str', is => 'rw';
-has twitter_users        => isa => 'HashRef', is => 'ro', default => sub { {} },
+
+has twitter_users => (
+    isa => 'HashRef',
+    default => sub { {} },
     traits => [qw/Hash/],
     handles => {
         set_user_by_id    => 'set',
         get_user_by_id    => 'get',
         delete_user_by_id => 'delete',
         get_users         => 'values',
-    };
+    },
+);
+
 has followers => (
     isa     => 'HashRef',
     traits  => [ qw/Hash/ ],
