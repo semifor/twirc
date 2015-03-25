@@ -1051,7 +1051,7 @@ sub on_event_retweet_retweeted {
     my ( $self, $msg ) = @_;
 
     my $screen_name = $msg->{source}{screen_name};
-    my $text = $msg->{target_object}{text};
+    my $text = $self->formatted_status_text($msg->{target_object});
 
     $self->bot_notice($self->irc_channel, "$screen_name retweeted your retweet: $text");
 }
@@ -1313,7 +1313,12 @@ event cmd_favorite => sub {
 
         $self->bot_says($channel, 'Which tweet?');
         for ( 1..@$recent ) {
-            $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]{text}, $self->truncate_to));
+            $self->bot_says($channel, "[$_] " .
+                elide(
+                    $self->formatted_status_text($recent->[$_ - 1]),
+                    $self->truncate_to
+                )
+            );
         }
     });
 };
@@ -1391,7 +1396,12 @@ event cmd_retweet => sub {
 
         $self->bot_says($channel, 'Which tweet?');
         for ( 1..@$recent ) {
-            $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]{text}, $self->truncate_to));
+            $self->bot_says($channel, "[$_] " .
+                elide(
+                    $self->formatted_status_text($recent->[$_ - 1]),
+                    $self->truncate_to
+                )
+            );
         }
     });
 };
@@ -1465,7 +1475,12 @@ event cmd_reply => sub {
 
         $self->bot_says($channel, 'Which tweet?');
         for ( 1..@$recent ) {
-            $self->bot_says($channel, "[$_] " . elide($recent->[$_ - 1]{text}, $self->truncate_to));
+            $self->bot_says($channel, "[$_] " .
+                elide(
+                    $self->formatted_status_text($recent->[$_ - 1]),
+                    $self->truncate_to
+                )
+            );
         }
     });
 };
