@@ -3,7 +3,7 @@ our $VERSION = '0.18';
 use MooseX::POE;
 
 use utf8;
-use Log::Log4perl;
+use Log::Log4perl qw/:easy/;
 use POE qw(Component::Server::IRC);
 use Net::OAuth;
 use Digest::SHA;
@@ -175,7 +175,18 @@ has plugins => isa => 'ArrayRef[Object]', is => 'ro', default => sub { [] };
 
 has irc_nickname => isa => 'Str', is => 'rw', init_arg => undef;
 
-has ircd => isa => 'POE::Component::Server::IRC', is => 'rw', weak_ref => 1;
+has ircd => (
+    isa      => 'POE::Component::Server::IRC',
+    is       => 'rw',
+    weak_ref => 1,
+    handles  => {
+        add_auth          => 'add_auth',
+        is_channel_member => 'state_is_chan_member',
+        nick_exists       => 'state_nick_exists',
+        post_ircd         => 'yield',
+        user_route        => '_state_user_route',
+    },
+);
 
 has _users_by_nick =>
     traits   => [qw/Hash/],
@@ -224,12 +235,24 @@ has has_joined_channel => (
 
 has stash  => init_arg => undef, isa => 'HashRef', is => 'rw', predicate => 'has_stash', clearer => 'clear_stash';
 
-has state =>
+has state => (
     isa      => 'POE::Component::Server::Twirc::State',
     is       => 'rw',
     lazy     => 1,
-    handles  => [qw/set_user_by_id get_user_by_id delete_user_by_id get_users/],
-    default  => sub { POE::Component::Server::Twirc::State->new };
+    default  => sub { POE::Component::Server::Twirc::State->new },
+    handles  => [qw/
+        access_token
+        access_token_secret
+        delete_user_by_id
+        followers
+        followers_updated_at
+        get_user_by_id
+        get_users
+        set_user_by_id
+        store
+        twitter_users
+    /],
+);
 
 has client_encoding => isa => 'Str', is  => 'rw', default => sub { 'utf-8' };
 
@@ -259,8 +282,8 @@ has twitter_rest_api => (
 
         AnyEvent::Twitter->new(
             $self->_twitter_auth,
-            token            => $self->state->access_token,
-            token_secret     => $self->state->access_token_secret,
+            token            => $self->access_token,
+            token_secret     => $self->access_token_secret,
         );
     },
 );
@@ -289,7 +312,7 @@ event get_authenticated_user_response => sub {
         $self->yield('connect_twitter_stream');
     }
     else {
-        $self->log->fatal("Failed to get authenticated user data from twitter (verify_credentials)");
+        FATAL("Failed to get authenticated user data from twitter (verify_credentials)");
         $self->yield('poco_shutdown');
     }
 };
@@ -322,14 +345,14 @@ sub twitter {
     weaken $self;
 
     my ( $http_method, $endpoint ) = @{ $endpoint_for{$method} || [] }
-        or return $self->log->error("no endopoint defined for $method");
+        or return ERROR("no endopoint defined for $method");
 
     # Flatten array args into comma delimited strings
     for my $k ( keys %$args ) {
         $args->{$k} = join ',' => @{ $args->{$k} } if ref $args->{$k} eq ref [];
     }
 
-    $self->log->debug(qq/Twitter API call: $http_method $endpoint ${ \join ', ' => map { "$_ => '$$args{$_}'" } keys %$args }/);
+    DEBUG(qq/Twitter API call: $http_method $endpoint ${ \join ', ' => map { "$_ => '$$args{$_}'" } keys %$args }/);
 
     my $w; $w = $self->twitter_rest_api->$http_method($endpoint, $args, sub {
         my ( $header, $r, $reason, $http_response ) = @_;
@@ -342,11 +365,6 @@ sub twitter {
             $self->twitter_error(qq/$$header{Status}: $reason => ${ \join ', ' => map { "$$_{code}: $$_{message}" } @{ $http_response->{errors} } }/);
         }
     });
-}
-
-sub post_ircd {
-    my $self = shift;
-    $self->ircd->yield(@_);
 }
 
 sub bot_says  {
@@ -386,7 +404,7 @@ sub add_user {
     my ($self, $user) = @_;
 
     my $nick = $$user{screen_name};
-    $self->log->trace("add_user: $nick");
+    TRACE("add_user: $nick");
 
     # handle nick changes
     if ( my $current_user = $self->get_user_by_id($$user{id}) ) {
@@ -397,7 +415,7 @@ sub add_user {
     $$user{FRESH} = time;
     $self->set_user($user);
 
-    unless ( $self->ircd->state_nick_exists($nick) ) {
+    unless ( $self->nick_exists($nick) ) {
         $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $$user{name} });
     }
 }
@@ -427,25 +445,25 @@ sub followers_stale_after () { 24*3600 } # 1 day
 sub are_followers_stale {
     my $self = shift;
 
-    return time - $self->state->followers_updated_at > $self->followers_stale_after;
+    return time - $self->followers_updated_at > $self->followers_stale_after;
 }
 
 sub add_follower_id {
     my ( $self, $id ) = @_;
 
-    $self->state->followers->{$id} = undef;
+    $self->followers->{$id} = undef;
 }
 
 sub remove_follower_id {
     my ( $self, $id ) = @_;
 
-    delete $self->state->followers->{$id};
+    delete $self->followers->{$id};
 }
 
 sub is_follower_id {
     my ( $self, $id ) = @_;
 
-    return exists $self->state->followers->{$id};
+    return exists $self->followers->{$id};
 }
 
 sub twitter_screen_name { shift->authenticated_user->{screen_name} }
@@ -474,22 +492,22 @@ sub formatted_status_text {
 event connect_twitter_stream => sub {
     weaken(my $self = $_[OBJECT]);
 
-    $self->log->trace('connect_twitter_stream');
+    TRACE('connect_twitter_stream');
 
     my $w = AnyEvent::Twitter::Stream->new(
         $self->_twitter_auth,
-        token        => $self->state->access_token,
-        token_secret => $self->state->access_token_secret,
+        token        => $self->access_token,
+        token_secret => $self->access_token_secret,
         method       => 'userstream',
         timeout      => $self->twitter_stream_timeout,
         on_connect   => sub {
-            $self->log->info('Connected to Twitter');
+            INFO('Connected to Twitter');
             $self->bot_notice($self->irc_channel, "Twitter stream connected");
             $self->reconnect_delay(0);
         },
         on_eof       => sub {
             $self->disconnect_twitter_stream;
-            $self->log->trace("on_eof");
+            TRACE("on_eof");
             $self->bot_notice($self->irc_channel, "Twitter stream disconnected");
             $self->yield('connect_twitter_stream') unless $self->is_shutting_down;
         },
@@ -498,17 +516,17 @@ event connect_twitter_stream => sub {
 
             $self->disconnect_twitter_stream;
 
-            $self->log->error("on_error: $e");
+            ERROR("on_error: $e");
             $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
             if ( $e =~ /^420:/ ) {
-                $self->log->fatal("excessive login rate; shutting down");
+                FATAL("excessive login rate; shutting down");
                 $self->yield('poco_shutdown');
                 return;
             }
 
             # progressively backoff on reconnection attepts to max_reconnect_delay
             if ( my $delay = $self->reconnect_delay ) {
-                $self->log->debug("delaying $delay seconds before reconnecting");
+                DEBUG("delaying $delay seconds before reconnecting");
             }
             my $t; $t = AE::timer $self->reconnect_delay, 0, sub {
                 undef $t;
@@ -519,27 +537,27 @@ event connect_twitter_stream => sub {
             };
         },
         on_keepalive   => sub {
-            $self->log->trace("on_keepalive");
+            TRACE("on_keepalive");
         },
         on_friends   => sub {
-            $self->log->trace("on_friends: ", JSON->new->encode(@_));
+            TRACE("on_friends: ", JSON->new->encode(@_));
             $self->yield(friends_ids => shift);
         },
         on_event     => sub {
             my $msg = shift;
 
-            $self->log->trace("on_event: $$msg{event}");
+            TRACE("on_event: $$msg{event}");
             $self->yield(on_event => $msg);
         },
         on_tweet     => sub {
             my $msg = shift;
 
-            $self->log->trace("on_tweet");
+            TRACE("on_tweet");
 
             return unless $self->has_joined_channel;
 
             if ( exists $$msg{sender} ) {
-                $self->log->debug('received old style direct_message');
+                DEBUG('received old style direct_message');
                 $self->yield(on_direct_message => $msg);
             }
             elsif ( exists $$msg{text} ) {
@@ -549,22 +567,22 @@ event connect_twitter_stream => sub {
                 $self->yield(on_direct_message => $$msg{direct_message});
             }
             elsif ( exists $$msg{limit} ) {
-                $self->log->warn("track limit: $$msg{limit}{track}");
+                WARN("track limit: $$msg{limit}{track}");
                 $self->bot_notice($self->irc_channel,
                     "Track limit received - $$msg{limit}{track} statuses missed.");
             }
             elsif ( exists $$msg{scrub_geo} ) {
                 # $$msg{scrub_geo} = {"user_id":14090452,"user_id_str":"14090452","up_to_status_id":23260136625,"up_to_status_id_str":"23260136625"}
                 my $e = $$msg{scrub_geo};
-                $self->log->info("scrub_geo: user_id=$$e{user_id}, up_to_status_id=$$e{up_to_status_id}");
+                INFO("scrub_geo: user_id=$$e{user_id}, up_to_status_id=$$e{up_to_status_id}");
             }
             else {
-                $self->log->error("unexpected message: ", JSON->new->pretty($msg));
+                ERROR("unexpected message: ", JSON->new->pretty($msg));
                 $self->bot_notice($self->irc_channel, "Unexpected twitter packet, see the log for details");
             }
         },
         on_delete    => sub {
-            $self->log->trace("on_delete");
+            TRACE("on_delete");
         },
     );
 
@@ -582,14 +600,14 @@ sub START {
                 network    => 'SimpleNET'
             },
             inline_states => {
-                _stop  => sub { $self->log->trace('[ircd:stop]') },
+                _stop  => sub { TRACE('[ircd:stop]') },
             },
         )
     );
 
     # register ircd to receive events
     $self->post_ircd('register' );
-    $self->ircd->add_auth(
+    $self->add_auth(
         mask     => $self->irc_mask,
         password => $self->irc_password,
         no_tilde => 1,
@@ -631,23 +649,23 @@ sub START {
 event _child => sub {
     my ($self, $kernel, $event, $child) = @_[OBJECT, KERNEL, ARG0, ARG1];
 
-    $self->log->trace("[_child] $event $child");
+    TRACE("[_child] $event $child");
     $kernel->detach_child($child) if $event eq 'create';
 };
 
 event poco_shutdown => sub {
     my ($self) = @_;
 
-    $self->log->trace("[poco_shutdown]");
+    TRACE("[poco_shutdown]");
     $self->shutting_down;
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
     if ( $self->state_file ) {
-        try { $self->state->store($self->state_file) }
+        try { $self->store($self->state_file) }
         catch {
             s/ at .*//s;
-            $self->log->error($_);
+            ERROR($_);
             $self->bot_notice($self->irc_channel, "Error storing state file: $_");
         };
     }
@@ -664,11 +682,11 @@ event poco_shutdown => sub {
 event ircd_daemon_nick => sub {
     my ($self, $sender, $nick) = @_[OBJECT, SENDER, ARG0];
 
-    $self->log->trace("[ircd_daemon_nick] $nick");
+    TRACE("[ircd_daemon_nick] $nick");
 
     # if it's a nick change, we only get ARG0 and ARG1
     return unless defined $_[ARG2];
-    return if $self->ircd->_state_user_route($nick) eq 'spoofed';
+    return if $self->user_route($nick) eq 'spoofed';
 
     $self->irc_nickname($nick);
 
@@ -683,13 +701,13 @@ event ircd_daemon_nick => sub {
 event ircd_daemon_join => sub {
     my($self, $sender, $user, $ch) = @_[OBJECT, SENDER, ARG0, ARG1];
 
-    $self->log->trace("[ircd_daemon_join] $user, $ch");
+    TRACE("[ircd_daemon_join] $user, $ch");
     return unless my($nick) = $user =~ /^([^!]+)!/;
-    return if $self->ircd->_state_user_route($nick) eq 'spoofed';
+    return if $self->user_route($nick) eq 'spoofed';
 
     if ( $ch eq $self->irc_channel ) {
         $self->joined_channel;
-        $self->log->trace("    joined!");
+        TRACE("    joined!");
         return;
     }
     elsif ( $self->log_channel && $ch eq $self->log_channel ) {
@@ -697,7 +715,7 @@ event ircd_daemon_join => sub {
         $appender->dump_history;
     }
     else {
-        $self->log->trace("    ** part **");
+        TRACE("    ** part **");
         # only one channel allowed
         $sender->get_heap()->_daemon_cmd_part($nick, $ch);
     }
@@ -719,7 +737,7 @@ event ircd_daemon_part => sub {
 event ircd_daemon_quit => sub {
     my($self, $user) = @_[OBJECT, ARG0];
 
-    $self->log->trace("[ircd_daemon_quit]");
+    TRACE("[ircd_daemon_quit]");
     return unless my($nick) = $user =~ /^([^!]+)!/;
     return unless $nick eq $self->irc_nickname;
 
@@ -738,19 +756,19 @@ event ircd_daemon_public => sub {
 
     my $nick = ( $user =~ m/^(.*)!/)[0];
 
-    $self->log->trace("[ircd_daemon_public] $nick: $text");
+    TRACE("[ircd_daemon_public] $nick: $text");
     return unless $nick eq $self->irc_nickname;
 
     # give any command handler a shot
     if ( $self->has_stash ) {
-        $self->log->debug("stash exists...");
+        DEBUG("stash exists...");
         my $handler = delete $self->stash->{handler};
         $self->clear_stash;
         if ( $handler ) {
             return if $self->call($handler, $channel, $text); # handled
         }
         else {
-            $self->log->error("stash exists with no handler");
+            ERROR("stash exists with no handler");
         }
         # the user ignored a command completion request, kill it
     }
@@ -810,10 +828,10 @@ event friend_join => sub {
     my ( $self, $friend ) = @_[OBJECT, ARG0];
 
     my $nick = $$friend{screen_name};
-    $self->log->trace("friend_join: $nick");
+    TRACE("friend_join: $nick");
 
     $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $$friend{name} })
-        unless $self->ircd->state_nick_exists($nick);
+        unless $self->nick_exists($nick);
 
     $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
     if ( $self->is_follower_id($$friend{id}) ) {
@@ -840,7 +858,7 @@ event lookup_friends_response => sub {
         $self->add_user($friend);
         $self->yield(friend_join => $friend);
     }
-    $self->state->store($self->state_file) if $self->state_file;
+    $self->store($self->state_file) if $self->state_file;
 };
 
 event get_followers_ids => sub {
@@ -865,8 +883,8 @@ event get_followers_ids_response => sub {
         return;
     }
     if ( %$followers ) {
-        $self->state->followers($followers);
-        $self->state->followers_updated_at(time);
+        $self->followers($followers);
+        $self->followers_updated_at(time);
 
         $self->yield('set_voice');
     }
@@ -892,7 +910,7 @@ event friends_ids => sub {
 
     my $buffer = [];
     for my $id ( @$friends_ids ) {
-        my $friend = $self->state->twitter_users->{$id};
+        my $friend = $self->twitter_users->{$id};
         if ( !$friend || $self->is_user_stale($friend) ) {
             push @$buffer, $id;
             if ( @$buffer == 100 ) {
@@ -922,11 +940,11 @@ event on_tweet => sub {
         $self->set_topic($text);
     }
 
-    unless ( $self->ircd->state_is_chan_member($nick, $self->irc_channel) ) {
+    unless ( $self->is_channel_member($nick, $self->irc_channel) ) {
         $self->post_ircd(daemon_cmd_join => $nick, $self->irc_channel);
     }
 
-    $self->log->trace("on_tweet: <$nick> $text");
+    TRACE("on_tweet: <$nick> $text");
     $self->post_ircd(daemon_cmd_privmsg => $nick, $self->irc_channel, $_) for split /[\r\n]+/, $text;
 };
 
@@ -951,7 +969,7 @@ event on_event => sub {
     return $self->$method($msg) if $self->can($method);
 
     $self->bot_notice($self->irc_channel, "Unhandled Twitter stream event: $$msg{event}");
-    $self->log->debug("unhandled event", JSON->new->pretty->encode($msg));
+    DEBUG("unhandled event", JSON->new->pretty->encode($msg));
 };
 
 sub on_event_follow {
@@ -1046,14 +1064,14 @@ event on_direct_message => sub {
     my ( $self, $msg ) = @_[OBJECT, ARG0];
 
     if ( $$msg{recipient_screen_name} ne $self->twitter_screen_name ) {
-        $self->log->info('direct message sent to @', $$msg{recipient_screen_name});
+        INFO('direct message sent to @', $$msg{recipient_screen_name});
         return;
     }
 
     my $nick = $$msg{sender_screen_name};
     my $sender = $$msg{sender};
 
-    unless ( $self->ircd->state_nick_exists($nick) ) {
+    unless ( $self->nick_exists($nick) ) {
         # This shouldn't happen - twitter only allows direct messages to followers, so
         # we *should* already have $nick on board.
         $self->post_ircd(add_spoofed_nick => { nick => $nick, ircname => $$sender{name} });
@@ -1099,7 +1117,7 @@ Post a status update.  E.g.,
 event cmd_post => sub {
     my ($self, $channel, $text) = @_[OBJECT, ARG0, ARG1];
 
-    $self->log->trace("[cmd_post_status]");
+    TRACE("[cmd_post_status]");
 
     return if $self->status_text_too_long($channel, $text);
 
@@ -1112,7 +1130,7 @@ event cmd_post_response => sub {
     my $self = $_[OBJECT];
     my ( $r ) = @{ $_[ARG1] };
 
-    $self->log->trace("    update returned $r->{id}") if $r;
+    TRACE("    update returned $r->{id}") if $r;
 };
 
 sub status_text_too_long {
@@ -1215,14 +1233,14 @@ description.
 event cmd_whois => sub {
     my ($self, $channel, $nick) = @_[OBJECT, ARG0, ARG1];
 
-    $self->log->trace("[cmd_whois] $nick");
+    TRACE("[cmd_whois] $nick");
 
 
     if ( my $user = $self->get_user_by_nick($nick) ) {
         $self->yield('cmd_whois_response' => [ $channel, $nick ], [ $user ]);
     }
     else {
-        $self->log->trace("     $nick not in users; fetching");
+        TRACE("     $nick not in users; fetching");
         $self->twitter(show_user => { screen_name => $nick },
             $_[SESSION]->callback(cmd_whois_response => $channel, $nick)
         );
@@ -1335,7 +1353,7 @@ event cmd_favorite => sub {
     my ($nick, $count) = split /\s+/, $args;
     $count ||= $self->selection_count;
 
-    $self->log->trace("[cmd_favorite] $nick");
+    TRACE("[cmd_favorite] $nick");
 
     $self->twitter(user_timeline => { screen_name => $nick, count => $count },
         $_[SESSION]->call(cmd_favorite_response => $channel, $nick)
@@ -1371,7 +1389,7 @@ event cmd_favorite_response => sub {
 event _handle_favorite => sub {
     my ( $self, $channel, $index ) = @_[OBJECT, ARG0, ARG1];
 
-    $self->log->trace("[handle_favorite] $index");
+    TRACE("[handle_favorite] $index");
 
     my @candidates = @{$self->stash->{candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
