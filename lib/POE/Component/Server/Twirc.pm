@@ -766,14 +766,15 @@ event ircd_daemon_public => sub {
     if ( $self->has_stash ) {
         DEBUG("stash exists...");
         my $handler = delete $self->stash->{handler};
-        $self->clear_stash;
         if ( $handler ) {
             return if $self->call($handler, $channel, $text); # handled
+            $self->clear_stash;
         }
         else {
             ERROR("stash exists with no handler");
         }
         # the user ignored a command completion request, kill it
+        $self->clear_stash;
     }
 
     for my $plugin ( @{$self->plugins} ) {
