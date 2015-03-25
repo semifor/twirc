@@ -317,6 +317,9 @@ has twitter_rest_api => (
             token_secret     => $self->access_token_secret,
         );
     },
+    handles => {
+        twitter_rest_api_request => 'request',
+    },
 );
 
 sub to_json { JSON::MaybeXS->new->encode($_[1]) }
@@ -391,17 +394,22 @@ sub twitter {
 
     DEBUG(qq/Twitter API call: $http_method $endpoint ${ \join ', ' => map { "$_ => '$$args{$_}'" } keys %$args }/);
 
-    my $w; $w = $self->twitter_rest_api->$http_method($endpoint, $args, sub {
-        my ( $header, $r, $reason, $http_response ) = @_;
+    my $w; $w = $self->twitter_rest_api_request(
+        method => $http_method,
+        api    => $endpoint,
+        params => $args,
+        sub {
+            my ( $header, $r, $reason, $http_response ) = @_;
 
-        undef $w;
-        if ( $r ) {
-            $cb->($r);
+            undef $w;
+            if ( $r ) {
+                $cb->($r);
+            }
+            else {
+                $self->twitter_error(qq/$$header{Status}: $reason => ${ \join ', ' => map { "$$_{code}: $$_{message}" } @{ $http_response->{errors} } }/);
+            }
         }
-        else {
-            $self->twitter_error(qq/$$header{Status}: $reason => ${ \join ', ' => map { "$$_{code}: $$_{message}" } @{ $http_response->{errors} } }/);
-        }
-    });
+    );
 }
 
 sub bot_says  {
