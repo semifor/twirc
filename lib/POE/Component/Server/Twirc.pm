@@ -12,7 +12,7 @@ use POE::Component::Server::Twirc::LogAppender;
 use POE::Component::Server::Twirc::State;
 use Encode qw/decode/;
 use Try::Tiny;
-use Scalar::Util qw/weaken/;
+use Scalar::Util qw/reftype weaken/;
 use AnyEvent;
 use AnyEvent::Twitter;
 use AnyEvent::Twitter::Stream;
@@ -269,22 +269,29 @@ has twitter_rest_api => (
 sub BUILD { shift->_users_by_nick }
 
 event get_authenticated_user => sub {
-    my $self = shift;
+    my $self = $_[OBJECT];
 
-    $self->twitter(verify_credentials => { include_entities => 1 }, sub {
-        if ( my $r = shift ) {
-            $self->authenticated_user($r);
-            if ( my $status = delete $$r{status} ) {
-                $$status{user} = $r;
-                $self->set_topic($self->formatted_status_text($status));
-            }
-            $self->yield('connect_twitter_stream');
+    $self->twitter(verify_credentials => { include_entities => 1 },
+        $_[SESSION]->callback('get_authenticated_user_response')
+    );
+};
+
+event get_authenticated_user_response => sub {
+    my $self = $_[OBJECT];
+    my ( $r ) = @{ $_[ARG1] };
+
+    if ( $r ) {
+        $self->authenticated_user($r);
+        if ( my $status = delete $$r{status} ) {
+            $$status{user} = $r;
+            $self->set_topic($self->formatted_status_text($status));
         }
-        else {
-            $self->log->fatal("Failed to get authenticated user data from twitter (verify_credentials)");
-            $self->yield('poco_shutdown');
-        }
-    });
+        $self->yield('connect_twitter_stream');
+    }
+    else {
+        $self->log->fatal("Failed to get authenticated user data from twitter (verify_credentials)");
+        $self->yield('poco_shutdown');
+    }
 };
 
 my %endpoint_for = (
@@ -310,7 +317,7 @@ my %endpoint_for = (
 );
 
 sub twitter {
-    my $cb = ref $_[-1] eq 'CODE' ? pop : sub {};
+    my $cb = ref $_[-1] && reftype $_[-1] eq 'CODE' ? pop : sub {};
     my ( $self, $method, $args ) = @_;
     weaken $self;
 
@@ -324,9 +331,10 @@ sub twitter {
 
     $self->log->debug(qq/Twitter API call: $http_method $endpoint ${ \join ', ' => map { "$_ => '$$args{$_}'" } keys %$args }/);
 
-    $self->twitter_rest_api->$http_method($endpoint, $args, sub {
+    my $w; $w = $self->twitter_rest_api->$http_method($endpoint, $args, sub {
         my ( $header, $r, $reason, $http_response ) = @_;
 
+        undef $w;
         if ( $r ) {
             $cb->($r);
         }
@@ -464,7 +472,7 @@ sub formatted_status_text {
 }
 
 event connect_twitter_stream => sub {
-    weaken(my $self = shift);
+    weaken(my $self = $_[OBJECT]);
 
     $self->log->trace('connect_twitter_stream');
 
@@ -564,7 +572,7 @@ event connect_twitter_stream => sub {
 };
 
 sub START {
-    weaken(my $self = shift);
+    weaken(my $self = $_[OBJECT]);
 
     $self->ircd(
         POE::Component::Server::IRC->spawn(
@@ -737,14 +745,14 @@ event ircd_daemon_public => sub {
     if ( $self->has_stash ) {
         $self->log->debug("stash exists...");
         my $handler = delete $self->stash->{handler};
+        $self->clear_stash;
         if ( $handler ) {
-            return if $self->$handler($channel, $text); # handled
+            return if $self->call($handler, $channel, $text); # handled
         }
         else {
             $self->log->error("stash exists with no handler");
         }
         # the user ignored a command completion request, kill it
-        $self->clear_stash;
     }
 
     for my $plugin ( @{$self->plugins} ) {
@@ -814,44 +822,54 @@ event friend_join => sub {
 };
 
 event lookup_friends => sub {
-    my ( $self, $ids ) = @_[OBJECT, ARG0];
+    my ( $self, $session, $ids ) = @_[OBJECT, SESSION, ARG0];
 
     return unless @$ids;
 
-    my $fresh = time;
-    $self->twitter(lookup_users => { user_id => $ids }, sub {
-        my $r = shift;
-        for my $friend ( @{$r || []} ) {
-            delete $friend->{status};
-            $self->add_user($friend);
-            $self->yield(friend_join => $friend);
-        }
-        $self->state->store($self->state_file) if $self->state_file;
-    });
+    $self->twitter(lookup_users => { user_id => $ids },
+        $session->callback('lookup_friends_response')
+    );
+};
+
+event lookup_friends_response => sub {
+    my $self = $_[OBJECT];
+    my ( $r ) = @{ $_[ARG1] };
+
+    for my $friend ( @{$r || []} ) {
+        delete $friend->{status};
+        $self->add_user($friend);
+        $self->yield(friend_join => $friend);
+    }
+    $self->state->store($self->state_file) if $self->state_file;
 };
 
 event get_followers_ids => sub {
     weaken(my $self = $_[OBJECT]);
 
-    my $followers = {};
-    my $cb; $cb = sub {
-        if ( my $r = shift ) {
-            for my $id ( @{$$r{ids}} ) {
-                $$followers{$id} = undef;
-            }
-            if ( my $cursor = $r->{next_cursor} ) {
-                $self->twitter(follower_ids => { cursor => $cursor }, $cb);
-            }
-        }
-        if ( %$followers ) {
-            $self->state->followers($followers);
-            $self->state->followers_updated_at(time);
+    $self->twitter(followers_ids => { cursor => -1 },
+        $_[SESSION]->callback(get_followers_ids_response => {})
+    );
+};
 
-            $self->yield('set_voice');
-            $followers = {};
-        }
-    };
-    $self->twitter(followers_ids => { cursor => -1 }, $cb);
+event get_followers_ids_response => sub {
+    weaken(my $self = $_[OBJECT]);
+    my ( $followers ) = @{ $_[ARG0] };
+    my ( $r )         = @{ $_[ARG1] };
+
+    $$followers{$_} = undef for @{$$r{ids}};
+
+    if ( my $cursor = $r->{next_cursor} ) {
+        $self->twitter(follower_ids => { cursor => $cursor },
+            $_[SESSION]->callback(get_followers_ids_response => $followers)
+        );
+        return;
+    }
+    if ( %$followers ) {
+        $self->state->followers($followers);
+        $self->state->followers_updated_at(time);
+
+        $self->yield('set_voice');
+    }
 };
 
 event set_voice => sub {
@@ -1085,11 +1103,16 @@ event cmd_post => sub {
 
     return if $self->status_text_too_long($channel, $text);
 
-    $self->twitter(update => { status => $text }, sub {
-        my $r = shift;
+    $self->twitter(update => { status => $text },
+        $_[SESSION]->callback('cmd_post_response')
+    );
+};
 
-        $self->log->trace("    update returned $r->{id}") if $r;
-    });
+event cmd_post_response => sub {
+    my $self = $_[OBJECT];
+    my ( $r ) = @{ $_[ARG1] };
+
+    $self->log->trace("    update returned $r->{id}") if $r;
 };
 
 sub status_text_too_long {
@@ -1194,24 +1217,32 @@ event cmd_whois => sub {
 
     $self->log->trace("[cmd_whois] $nick");
 
-    my $cb = sub {
-        if ( my $user = shift ) {
-            $self->bot_says(
-                $channel,
-                sprintf('%s [%s]: %s, %s', @{$user}{qw/screen_name id name location description url/})
-            );
-        }
-        else {
-            $self->bot_says($channel, "I don't know $nick.");
-        }
-    };
 
     if ( my $user = $self->get_user_by_nick($nick) ) {
-        $cb->($user);
+        $self->yield('cmd_whois_response' => [ $channel, $nick ], [ $user ]);
     }
     else {
         $self->log->trace("     $nick not in users; fetching");
-        $self->twitter(show_user => { screen_name => $nick }, $cb);
+        $self->twitter(show_user => { screen_name => $nick },
+            $_[SESSION]->callback(cmd_whois_response => $channel, $nick)
+        );
+    }
+};
+
+event cmd_whois_response => sub {
+    my $self = $_[OBJECT];
+    my ( $channel, $nick ) = @{ $_[ARG0] };
+    my ( $user ) = @{ $_[ARG1] };
+
+    if ( $user ) {
+        $self->bot_says($channel, sprintf '%s [%s]: %s, %s',
+            @{$user}{qw/screen_name id name/},
+            (map decode_entites($_), @{$user}{qw/location description/}),
+            $$user{url}
+        );
+    }
+    else {
+        $self->bot_says($channel, "I don't know $nick.");
     }
 };
 
@@ -1223,7 +1254,7 @@ Turns mobile device notifications on or off for the list of I<screen_name>s.
 
 event cmd_notify => sub {
     my $self = $_[OBJECT];
-    $self->_update_fship('device', @_[ARG0, ARG1]);
+    $self->call(_update_fship => 'device', @_[ARG0, ARG1]);
 };
 
 =item retweets I<on|off> I<screen_name ...>
@@ -1235,13 +1266,13 @@ I<screen_name>s.
 
 event cmd_retweets => sub {
     my $self = $_[OBJECT];
-    $self->_update_fship('retweets', @_[ARG0, ARG1]);
+    $self->call(_update_fship => 'retweets', @_[ARG0, ARG1]);
 };
 
 # Call update_friendships
 # All settings updated at once so existing must be preserved
-sub _update_fship {
-    my ($self, $command, $channel, $argstr) = @_;
+event _update_fship => sub {
+    my ($self, $command, $channel, $argstr) = @_[OBJECT, ARG0..ARG2];
 
     my @nicks = split /\s+/, $argstr;
     my $onoff = shift @nicks;
@@ -1253,34 +1284,42 @@ sub _update_fship {
 
     my $setting = $onoff eq 'on' ? 1 : 0;
     for my $nick ( @nicks ) {
-        $self->twitter(show_friendship => { target_screen_name => $nick }, sub {
-            my $r = shift || return;
-
-            my $source = $r->{relationship}{source};
-            # Pull out existing settings
-            # Quoted values to get 0/1 vs weird JSON:: things that break the API
-            my %current_value = (
-                device   => "$source->{notifications_enabled}",
-                retweets => "$source->{want_retweets}",
-            );
-
-            # Skip unnecessary updates
-            if ( $current_value{$command} == $setting ) {
-                $self->bot_says($channel, "No need to update $nick");
-                return;
-            }
-
-            # Update
-            $self->twitter(update_friendship => {
-                screen_name => $nick,
-                # current values as default
-                %current_value,
-                # override with new value
-                $command => $setting
-            });
-        });
+        $self->twitter(show_friendship => { target_screen_name => $nick },
+            $_[SESSION]->callback( _update_fship_response =>
+                $command, $channel, $nick, $setting
+            )
+        );
     }
-}
+};
+
+event _update_fship_response => sub {
+    my $self = $_[OBJECT];
+    my ( $r ) = @{ $_[ARG1] } || return;
+    my ( $command, $channel, $nick, $setting ) = @{ $_[ARG0] };
+
+    my $source = $r->{relationship}{source};
+    # Pull out existing settings
+    # Quoted values to get 0/1 vs weird JSON:: things that break the API
+    my %current_value = (
+        device   => "$source->{notifications_enabled}",
+        retweets => "$source->{want_retweets}",
+    );
+
+    # Skip unnecessary updates
+    if ( $current_value{$command} == $setting ) {
+        $self->bot_says($channel, "No need to update $nick");
+        return;
+    }
+
+    # Update
+    $self->twitter(update_friendship => {
+        screen_name => $nick,
+        # current values as default
+        %current_value,
+        # override with new value
+        $command => $setting
+    });
+};
 
 =item favorite I<screen_name> [I<count>]
 
@@ -1298,40 +1337,45 @@ event cmd_favorite => sub {
 
     $self->log->trace("[cmd_favorite] $nick");
 
-    $self->twitter(user_timeline => { screen_name => $nick, count => $count }, sub {
-        my $recent = shift || return;
-
-        if ( @$recent == 0 ) {
-            $self->bot_says($channel, "$nick has no recent tweets");
-            return;
-        }
-
-        $self->stash({
-            handler    => '_handle_favorite',
-            candidates => [ map $$_{id_str}, @$recent ],
-        });
-
-        $self->bot_says($channel, 'Which tweet?');
-        for ( 1..@$recent ) {
-            $self->bot_says($channel, "[$_] " .
-                elide(
-                    $self->formatted_status_text($recent->[$_ - 1]),
-                    $self->truncate_to
-                )
-            );
-        }
-    });
+    $self->twitter(user_timeline => { screen_name => $nick, count => $count },
+        $_[SESSION]->call(cmd_favorite_response => $channel, $nick)
+    );
 };
 
-sub _handle_favorite {
-    my ($self, $channel, $index) = @_;
+event cmd_favorite_response => sub {
+    my $self = $_[OBJECT];
+    my ( $recent ) = @{ $_[ARG1] } || return;
+    my ( $channel, $nick ) = @{ $_[ARG0] };
+
+    if ( @$recent == 0 ) {
+        $self->bot_says($channel, "$nick has no recent tweets");
+        return;
+    }
+
+    $self->stash({
+        handler    => '_handle_favorite',
+        candidates => [ map $$_{id_str}, @$recent ],
+    });
+
+    $self->bot_says($channel, 'Which tweet?');
+    for ( 1..@$recent ) {
+        $self->bot_says($channel, "[$_] " .
+            elide(
+                $self->formatted_status_text($recent->[$_ - 1]),
+                $self->truncate_to
+            )
+        );
+    }
+};
+
+event _handle_favorite => sub {
+    my ( $self, $channel, $index ) = @_[OBJECT, ARG0, ARG1];
 
     $self->log->trace("[handle_favorite] $index");
 
     my @candidates = @{$self->stash->{candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
         $self->twitter(create_favorite => { id => $candidates[$index - 1] });
-        $self->clear_stash;
         return 1; # handled
     }
     return 0; # unhandled
@@ -1346,19 +1390,25 @@ Displays the remaining number of API requests available in the current hour.
 event cmd_rate_limit_status => sub {
     my ($self, $channel) = @_[OBJECT, ARG0];
 
-    $self->twitter('rate_limit_status', {}, sub {
-        my $r = shift || return;
+    $self->twitter('rate_limit_status', {},
+        $_[SESSION]->call(cmd_rate_limit_status_response => $channel)
+    );
+};
 
-        my $reset_time = sprintf "%02d:%02d:%02d", (localtime $r->{reset_time_in_seconds})[2,1,0];
-        my $seconds_remaining = $r->{reset_time_in_seconds} - time;
-        my $time_remaining = sprintf "%d:%02d", int($seconds_remaining / 60), $seconds_remaining % 60;
-        $self->bot_says($channel, sprintf "%s API calls remaining for the next %s (until %s), hourly limit is %s",
-            $$r{remaining_hits},
-            $time_remaining,
-            $reset_time,
-            $$r{hourly_limit},
-        );
-    });
+event cmd_rate_limit_status_response => sub {
+    my $self = $_[OBJECT];
+    my ( $r ) = @{ $_[ARG1] } || return;
+    my ( $channel ) = @{ $_[ARG0] };
+
+    my $reset_time = sprintf "%02d:%02d:%02d", (localtime $r->{reset_time_in_seconds})[2,1,0];
+    my $seconds_remaining = $r->{reset_time_in_seconds} - time;
+    my $time_remaining = sprintf "%d:%02d", int($seconds_remaining / 60), $seconds_remaining % 60;
+    $self->bot_says($channel, sprintf "%s API calls remaining for the next %s (until %s), hourly limit is %s",
+        $$r{remaining_hits},
+        $time_remaining,
+        $reset_time,
+        $$r{hourly_limit},
+    );
 };
 
 =item retweet I<screen_name> [I<count>]
@@ -1381,29 +1431,35 @@ event cmd_retweet => sub {
 
     $count ||= $self->selection_count;
 
-    $self->twitter(user_timeline => { screen_name => $nick, count => $count }, sub {
-        my $recent = shift || return;
+    $self->twitter(user_timeline => { screen_name => $nick, count => $count },
+        $_[SESSION]->callback(cmd_retweet_response => $channel, $nick)
+    );
+};
 
-        if ( @$recent == 0 ) {
-            $self->bot_says($channel, "$nick has no recent tweets");
-            return;
-        }
+event cmd_retweet_response => sub {
+    my $self = $_[OBJECT];
+    my ( $recent ) = @{ $_[ARG1] } || return;
+    my ( $channel, $nick ) = @{ $_[ARG0] };
 
-        $self->stash({
-            handler    => '_handle_retweet',
-            candidates => [ map $$_{id_str}, @$recent ],
-        });
+    if ( @$recent == 0 ) {
+        $self->bot_says($channel, "$nick has no recent tweets");
+        return;
+    }
 
-        $self->bot_says($channel, 'Which tweet?');
-        for ( 1..@$recent ) {
-            $self->bot_says($channel, "[$_] " .
-                elide(
-                    $self->formatted_status_text($recent->[$_ - 1]),
-                    $self->truncate_to
-                )
-            );
-        }
+    $self->stash({
+        handler    => '_handle_retweet',
+        candidates => [ map $$_{id_str}, @$recent ],
     });
+
+    $self->bot_says($channel, 'Which tweet?');
+    for ( 1..@$recent ) {
+        $self->bot_says($channel, "[$_] " .
+            elide(
+                $self->formatted_status_text($recent->[$_ - 1]),
+                $self->truncate_to
+            )
+        );
+    }
 };
 
 =item rt I<screen_name> [I<count>]
@@ -1414,13 +1470,12 @@ An alias for the C<retweet> command.
 
 event cmd_rt => sub { shift->cmd_retweet(@_) };
 
-sub _handle_retweet {
-    my ($self, $channel, $index) = @_;
+event _handle_retweet => sub {
+    my ( $self, $channel, $index ) = @_[OBJECT, ARG0, ARG1];
 
     my @candidates = @{$self->stash->{candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
         $self->twitter(retweet => { id => $candidates[$index - 1] });
-        $self->clear_stash;
         return 1; # handled
     }
     return 0; # unhandled
@@ -1459,34 +1514,40 @@ event cmd_reply => sub {
 
     $count ||= $self->selection_count;
 
-    $self->twitter(user_timeline => { screen_name => $nick, count => $count }, sub {
-        my $recent = shift || return;
-
-        if ( @$recent == 0 ) {
-            $self->bot_says($channel, "$nick has no recent tweets");
-            return;
-        }
-
-        $self->stash({
-            handler    => '_handle_reply',
-            candidates => [ map $_->{id_str}, @$recent ],
-            message    => $message,
-        });
-
-        $self->bot_says($channel, 'Which tweet?');
-        for ( 1..@$recent ) {
-            $self->bot_says($channel, "[$_] " .
-                elide(
-                    $self->formatted_status_text($recent->[$_ - 1]),
-                    $self->truncate_to
-                )
-            );
-        }
-    });
+    $self->twitter(user_timeline => { screen_name => $nick, count => $count },
+        $_[SESSION]->call(cmd_reply_response => $channel, $nick, $message)
+    );
 };
 
-sub _handle_reply {
-    my ($self, $channel, $index) = @_;
+event cmd_reply_response => sub {
+    my $self = $_[OBJECT];
+    my ( $recent ) = @{ $_[ARG1] } || return;
+    my ( $channel, $nick, $message ) = @{ $_[ARG0] };
+
+    if ( @$recent == 0 ) {
+        $self->bot_says($channel, "$nick has no recent tweets");
+        return;
+    }
+
+    $self->stash({
+        handler    => '_handle_reply',
+        candidates => [ map $_->{id_str}, @$recent ],
+        message    => $message,
+    });
+
+    $self->bot_says($channel, 'Which tweet?');
+    for ( 1..@$recent ) {
+        $self->bot_says($channel, "[$_] " .
+            elide(
+                $self->formatted_status_text($recent->[$_ - 1]),
+                $self->truncate_to
+            )
+        );
+    }
+};
+
+event _handle_reply => sub {
+    my ( $self, $channel, $index ) = @_[OBJECT, ARG0, ARG1];
 
     my @candidates = @{$self->stash->{candidates} || []};
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
@@ -1494,7 +1555,6 @@ sub _handle_reply {
             status                => $self->stash->{message},
             in_reply_to_status_id => $candidates[$index - 1],
         });
-        $self->clear_stash;
         return 1; # handled
     }
     return 0; # unhandled
