@@ -980,7 +980,7 @@ sub on_event_follow {
     my ( $self, $event ) = @_;
 
     if ( my $source = $$event{source} ) {
-        my $target = $$event{target} || return;
+        my $target = $$event{target} or return;
 
         # new friend
         if ( $$source{id} eq $self->twitter_id ) {
@@ -1317,7 +1317,7 @@ event _update_fship => sub {
 
 event _update_fship_response => sub {
     my $self = $_[OBJECT];
-    my ( $r ) = @{ $_[ARG1] } || return;
+    my ( $r ) = @{ $_[ARG1] } or return;
     my ( $command, $channel, $nick, $setting ) = @{ $_[ARG0] };
 
     my $source = $r->{relationship}{source};
@@ -1361,13 +1361,13 @@ event cmd_favorite => sub {
     TRACE("[cmd_favorite] $nick");
 
     $self->twitter(user_timeline => { screen_name => $nick, count => $count },
-        $_[SESSION]->call(cmd_favorite_response => $channel, $nick)
+        $_[SESSION]->callback(cmd_favorite_response => $channel, $nick)
     );
 };
 
 event cmd_favorite_response => sub {
     my $self = $_[OBJECT];
-    my ( $recent ) = @{ $_[ARG1] } || return;
+    my ( $recent ) = @{ $_[ARG1] } or return;
     my ( $channel, $nick ) = @{ $_[ARG0] };
 
     if ( @$recent == 0 ) {
@@ -1414,13 +1414,13 @@ event cmd_rate_limit_status => sub {
     my ($self, $channel) = @_[OBJECT, ARG0];
 
     $self->twitter('rate_limit_status', {},
-        $_[SESSION]->call(cmd_rate_limit_status_response => $channel)
+        $_[SESSION]->callback(cmd_rate_limit_status_response => $channel)
     );
 };
 
 event cmd_rate_limit_status_response => sub {
     my $self = $_[OBJECT];
-    my ( $r ) = @{ $_[ARG1] } || return;
+    my ( $r ) = @{ $_[ARG1] } or return;
     my ( $channel ) = @{ $_[ARG0] };
 
     my $reset_time = sprintf "%02d:%02d:%02d", (localtime $r->{reset_time_in_seconds})[2,1,0];
@@ -1461,7 +1461,7 @@ event cmd_retweet => sub {
 
 event cmd_retweet_response => sub {
     my $self = $_[OBJECT];
-    my ( $recent ) = @{ $_[ARG1] } || return;
+    my ( $recent ) = @{ $_[ARG1] } or return;
     my ( $channel, $nick ) = @{ $_[ARG0] };
 
     if ( @$recent == 0 ) {
@@ -1538,13 +1538,13 @@ event cmd_reply => sub {
     $count ||= $self->selection_count;
 
     $self->twitter(user_timeline => { screen_name => $nick, count => $count },
-        $_[SESSION]->call(cmd_reply_response => $channel, $nick, $message)
+        $_[SESSION]->callback(cmd_reply_response => $channel, $nick, $message)
     );
 };
 
 event cmd_reply_response => sub {
     my $self = $_[OBJECT];
-    my ( $recent ) = @{ $_[ARG1] } || return;
+    my ( $recent ) = @{ $_[ARG1] } or return;
     my ( $channel, $nick, $message ) = @{ $_[ARG0] };
 
     if ( @$recent == 0 ) {
