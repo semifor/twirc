@@ -538,8 +538,6 @@ event connect_twitter_stream => sub {
         on_error   => sub {
             my $e = shift;
 
-            $self->disconnect_twitter_stream;
-
             ERROR("on_error: $e");
             $self->bot_notice($self->irc_channel, "Twitter stream error: $e");
             if ( $e =~ /^420:/ ) {
@@ -547,6 +545,8 @@ event connect_twitter_stream => sub {
                 $self->yield('poco_shutdown');
                 return;
             }
+
+            $self->disconnect_twitter_stream;
 
             # progressively backoff on reconnection attepts to max_reconnect_delay
             if ( my $delay = $self->reconnect_delay ) {
@@ -682,6 +682,7 @@ event poco_shutdown => sub {
 
     TRACE("[poco_shutdown]");
     $self->shutting_down;
+    $self->disconnect_twitter_stream;
     $_[KERNEL]->alarm_remove_all();
     $self->post_ircd('unregister');
     $self->post_ircd('shutdown');
