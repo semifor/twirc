@@ -1255,7 +1255,8 @@ event cmd_whois_response => sub {
     if ( $user ) {
         $self->bot_says($channel, sprintf '%s [%s]: %s, %s',
             @{$user}{qw/screen_name id name/},
-            (map decode_entites($_), @{$user}{qw/location description/}),
+            (map decode_entities(defined $_ ? $_ : ''),
+                @{$user}{qw/location description/}),
             $$user{url}
         );
     }
