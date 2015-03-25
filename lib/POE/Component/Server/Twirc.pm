@@ -2,6 +2,7 @@ package POE::Component::Server::Twirc;
 our $VERSION = '0.18';
 use MooseX::POE;
 
+use utf8;
 use Log::Log4perl;
 use POE qw(Component::Server::IRC);
 use Net::OAuth;
