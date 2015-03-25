@@ -1087,7 +1087,7 @@ event on_direct_message => sub {
             for split /\r?\n/, $text;
 };
 
-sub on_event_retweet_retweeted {
+sub on_event_retweeted_retweet {
     my ( $self, $msg ) = @_;
 
     my $screen_name = $msg->{source}{screen_name};
