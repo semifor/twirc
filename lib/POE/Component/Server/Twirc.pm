@@ -233,7 +233,26 @@ has has_joined_channel => (
     },
 );
 
-has stash  => init_arg => undef, isa => 'HashRef', is => 'rw', predicate => 'has_stash', clearer => 'clear_stash';
+has stash  => (
+    init_arg => undef,
+    isa => 'HashRef',
+    traits => [ qw/Hash/ ],
+    is => 'rw',
+    predicate => 'has_stash',
+    clearer => 'clear_stash',
+    handles => {
+        stashed_candidates     => [ get    => 'candidates' ],
+        stashed_handler        => [ get    => 'handler'    ],
+        stashed_message        => [ get    => 'message'    ],
+        delete_stashed_handler => [ delete => 'handler'    ],
+    },
+);
+
+around stashed_candidates => sub {
+    my ( $orig, $self ) = @_;
+
+    return @{ $self->$orig || [] };
+};
 
 has state => (
     isa      => 'POE::Component::Server::Twirc::State',
@@ -756,7 +775,7 @@ event ircd_daemon_public => sub {
     # give any command handler a shot
     if ( $self->has_stash ) {
         DEBUG("stash exists...");
-        my $handler = delete $self->stash->{handler};
+        my $handler = $self->delete_stashed_handler;
         if ( $handler ) {
             return if $self->call($handler, $channel, $text); # handled
             $self->clear_stash;
@@ -1387,7 +1406,7 @@ event _handle_favorite => sub {
 
     TRACE("[handle_favorite] $index");
 
-    my @candidates = @{$self->stash->{candidates} || []};
+    my @candidates = $self->stashed_candidates;
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
         $self->twitter(create_favorite => { id => $candidates[$index - 1] });
         return 1; # handled
@@ -1487,7 +1506,7 @@ event cmd_rt => sub { shift->cmd_retweet(@_) };
 event _handle_retweet => sub {
     my ( $self, $channel, $index ) = @_[OBJECT, ARG0, ARG1];
 
-    my @candidates = @{$self->stash->{candidates} || []};
+    my @candidates = $self->stashed_candidates;
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
         $self->twitter(retweet => { id => $candidates[$index - 1] });
         return 1; # handled
@@ -1563,10 +1582,10 @@ event cmd_reply_response => sub {
 event _handle_reply => sub {
     my ( $self, $channel, $index ) = @_[OBJECT, ARG0, ARG1];
 
-    my @candidates = @{$self->stash->{candidates} || []};
+    my @candidates = $self->stashed_candidates;
     if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
         $self->twitter(update => {
-            status                => $self->stash->{message},
+            status                => $self->stashed_message,
             in_reply_to_status_id => $candidates[$index - 1],
         });
         return 1; # handled
