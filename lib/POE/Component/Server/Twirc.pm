@@ -266,7 +266,16 @@ has twitter_stream_watcher => (
     predicate => 'has_twitter_stream_watcher',
 );
 
-has authenticated_user => is => 'rw', isa => 'HashRef', init_arg => undef;
+has authenticated_user => (
+    is       => 'rw',
+    isa      => 'HashRef',
+    traits   => [ qw/Hash/ ],
+    init_arg => undef,
+    handles => {
+        twitter_screen_name => [ get => 'screen_name' ],
+        twitter_id          => [ get => 'id' ],
+    },
+);
 
 has is_shutting_down => (
     is      => 'ro',
@@ -453,9 +462,6 @@ sub are_followers_stale {
 
     return time - $self->followers_updated_at > $self->followers_stale_after;
 }
-
-sub twitter_screen_name { shift->authenticated_user->{screen_name} }
-sub twitter_id          { shift->authenticated_user->{id} }
 
 sub formatted_status_text {
     my ( $self, $status ) = @_;
