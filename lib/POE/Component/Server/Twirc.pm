@@ -352,6 +352,9 @@ sub twitter {
         $args->{$k} = join ',' => @{ $args->{$k} } if ref $args->{$k} eq ref [];
     }
 
+    # handle path parameters
+    $endpoint =~ s/:(\w+)$/delete $$args{$1}/e;
+
     DEBUG(qq/Twitter API call: $http_method $endpoint ${ \join ', ' => map { "$_ => '$$args{$_}'" } keys %$args }/);
 
     my $w; $w = $self->twitter_rest_api->$http_method($endpoint, $args, sub {
