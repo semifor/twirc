@@ -245,6 +245,9 @@ has state => (
         access_token_secret
         delete_user_by_id
         followers
+        add_follower_id
+        remove_follower_id
+        is_follower_id
         followers_updated_at
         get_user_by_id
         get_users
@@ -449,24 +452,6 @@ sub are_followers_stale {
     my $self = shift;
 
     return time - $self->followers_updated_at > $self->followers_stale_after;
-}
-
-sub add_follower_id {
-    my ( $self, $id ) = @_;
-
-    $self->followers->{$id} = undef;
-}
-
-sub remove_follower_id {
-    my ( $self, $id ) = @_;
-
-    delete $self->followers->{$id};
-}
-
-sub is_follower_id {
-    my ( $self, $id ) = @_;
-
-    return exists $self->followers->{$id};
 }
 
 sub twitter_screen_name { shift->authenticated_user->{screen_name} }

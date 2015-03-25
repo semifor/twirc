@@ -15,7 +15,24 @@ has twitter_users        => isa => 'HashRef', is => 'ro', default => sub { {} },
         delete_user_by_id => 'delete',
         get_users         => 'values',
     };
-has followers            => isa => 'HashRef', is => 'rw', default => sub { {} };
+has followers => (
+    isa     => 'HashRef',
+    traits  => [ qw/Hash/ ],
+    is      => 'rw',
+    default => sub { {} },
+    handles => {
+        add_follower_id    => 'set',
+        remove_follower_id => 'delete',
+        is_follower_id     => 'exists',
+    },
+);
+
+around add_follower_id => sub {
+    my ( $orig, $self, $id ) = @_;
+
+    $self->$orig($id, undef);
+};
+
 has followers_updated_at => is => 'rw', isa => 'Int', default => 0;
 
 no Moose;
