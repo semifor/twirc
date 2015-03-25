@@ -18,6 +18,7 @@ use AnyEvent::Twitter;
 use AnyEvent::Twitter::Stream;
 use HTML::Entities;
 use Regexp::Common qw/URI/;
+use JSON::MaybeXS;
 
 with 'MooseX::Log::Log4perl';
 
@@ -318,6 +319,9 @@ has twitter_rest_api => (
     },
 );
 
+sub to_json { JSON::MaybeXS->new->encode($_[1]) }
+sub to_pretty_json { JSON::MaybeXS->new->pretty>encode($_[1]) }
+
 # force build of users by nick hash early
 sub BUILD { shift->_users_by_nick }
 
@@ -552,7 +556,7 @@ event connect_twitter_stream => sub {
             TRACE("on_keepalive");
         },
         on_friends   => sub {
-            TRACE("on_friends: ", JSON->new->encode(@_));
+            TRACE("on_friends: ", $self->to_json(@_));
             $self->yield(friends_ids => shift);
         },
         on_event     => sub {
@@ -589,7 +593,7 @@ event connect_twitter_stream => sub {
                 INFO("scrub_geo: user_id=$$e{user_id}, up_to_status_id=$$e{up_to_status_id}");
             }
             else {
-                ERROR("unexpected message: ", JSON->new->pretty($msg));
+                ERROR("unexpected message: ", $self->to_pretty_json($msg));
                 $self->bot_notice($self->irc_channel, "Unexpected twitter packet, see the log for details");
             }
         },
@@ -982,7 +986,7 @@ event on_event => sub {
     return $self->$method($msg) if $self->can($method);
 
     $self->bot_notice($self->irc_channel, "Unhandled Twitter stream event: $$msg{event}");
-    DEBUG("unhandled event", JSON->new->pretty->encode($msg));
+    DEBUG("unhandled event", $self->to_pretty_json($msg));
 };
 
 sub on_event_follow {

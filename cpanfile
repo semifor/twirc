@@ -5,7 +5,6 @@ requires 'Config::Any'                 => 0;
 requires 'Encode'                      => 0;
 requires 'FindBin'                     => 0;
 requires 'HTML::Entities'              => 0;
-requires 'JSON::Any'                   => 0;
 requires 'JSON::MaybeXS'               => 0;
 requires 'LWP::UserAgent::POE'         => 0.02;
 requires 'Log::Log4perl'               => 0;
