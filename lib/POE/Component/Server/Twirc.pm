@@ -1,5 +1,5 @@
 package POE::Component::Server::Twirc;
-our $VERSION = '0.18';
+
 use MooseX::POE;
 
 use utf8;

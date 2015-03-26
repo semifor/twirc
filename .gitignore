@@ -1,4 +1,5 @@
 local/
 .build/
+tmp/
 POE-Component-Server-Twirc-*/
 POE-Component-Server-Twirc-*.gz
