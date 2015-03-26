@@ -28,7 +28,7 @@ makes your favorite IRC client a twitter client.
 
 You can install C<twirc> just as you would any other CPAN distribution:
 
-    cpan POE::Component::Server::Twirc
+    cpanm POE::Component::Server::Twirc
 
 Or, you can download and unpack C<twirc>, then run it from a directory of your
 choice without running C<make install>.  That's the way the author runs it.  If
@@ -157,16 +157,6 @@ TRACE.  The default is WARN.
 
 File used to store state information between sessions, including Twitter OAuth
 access tokens, friends, and followers_ids.
-
-=item twitter_args
-
-Use this to pass additional parameters to L<Net::Twitter>'s constructor. For
-example, this version of Twirc uses SSL connections to the Twitter API. If
-you're using a service that requires non-SSL connections, add this to your
-configuration file:
-
-    twitter_args:
-        ssl: 0
 
 =back
 
@@ -345,11 +335,6 @@ Squashes whitespace in tweets to a single space. See L<App::Twirc::Plugin::Squas
 Commands are prefixed with a bang (i.e., exclamation point "!").  Text entered
 without a bang prefix is posted as a status update.  See L<App::Twirc::Plugin::BangCommands>.
 
-=item SecondaryAccount
-
-Cross-posts status updates to one or more secondary Twitter (or Twitter API
-compatible, like Identi.ca) accounts.  See L<App::Twirc::Plugin::SecondaryAccount>.
-
 =back
 
 =head1 SUPPORT
@@ -369,6 +354,6 @@ Peter Roberts <me+dev@peter-r.co.uk>
 
 =head1 AUTHOR
 
-Marc Mims <marc@questright.com>
+Marc Mims <mmims@cpan.org>
 
 I'm C<semifor> on twitter and IRC.

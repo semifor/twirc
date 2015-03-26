@@ -53,7 +53,7 @@ __END__
 
 =head1 NAME
 
-App::Twirc::Plugin::SecondaryAccount - Cross post updates to another account
+App::Twirc::Plugin::SecondaryAccount - Cross post updates (DEPRECATED)
 
 =head1 SYNOPSIS
 
@@ -105,13 +105,20 @@ Twitter and Identi.ca.  If I include a C<-fb> option to post, my status update
 is posted to Twitter, Identi.ca, and Facebook.  If I add a C<-fbonly> option to
 C<post>, my status update is only posted to the Facebook account.
 
+=head1 DEPRCATION NOTICE
+
+This module relies on username/password authentication, which Twitter dropped
+ages ago. The author isn't using this plugin, personally, and suspects no one
+else is, either. So, if you are using it, file an issue, or better---a pull
+request. Otherwise, it will get silently dropped in a future release.
+
 =head1 AUTHOR
 
-Marc Mims <marc@questright.com>
+Marc Mims <mmims@cpan.org>
 
 =head1 LICENSE
 
-Copyright (c) 2009 Marc Mims
+Copyright (c) 2015 Marc Mims
 
 You may distribute this code and/or modify it under the same terms as Perl itself.
 
