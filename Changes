@@ -1,3 +1,9 @@
+0.18 2014-03-30
+    - Major overhaul
+      - fixed circular references
+      - full, non-blocking IO for Twitter API callsv
+      - Many fixes by Peter Roberts (Thank you!)
+
 0.17 2014-01-18
     - Enable SSL for Twitter API calls
 
