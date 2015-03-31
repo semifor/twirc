@@ -1,4 +1,6 @@
-0.18 2014-03-30
+0.19 2014-03-30
+
+0.18-TRIAL  2014-03-26
     - Major overhaul
       - fixed circular references
       - full, non-blocking IO for Twitter API callsv
