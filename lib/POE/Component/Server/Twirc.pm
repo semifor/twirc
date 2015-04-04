@@ -513,6 +513,23 @@ sub formatted_status_text {
     return $text;
 }
 
+sub select_candidate {
+    my ( $self, $index ) = @_;
+
+    my @candidates = $self->stashed_candidates;
+    return unless $index !~ /\D/ && 0 < $index && $index <= @candidates;
+
+    $candidates[ $index - 1 ];
+}
+
+sub select_candidate_id {
+    my ( $self, $index ) = @_;
+
+    return unless my $candidate = $self->select_candidate($index);
+
+    $$candidate{id_str};
+}
+
 event connect_twitter_stream => sub {
     weaken(my $self = $_[OBJECT]);
 
@@ -1399,7 +1416,7 @@ event cmd_favorite_response => sub {
 
     $self->stash({
         handler    => '_handle_favorite',
-        candidates => [ map $$_{id_str}, @$recent ],
+        candidates => $recent,
     });
 
     $self->bot_says($channel, 'Which tweet?');
@@ -1418,9 +1435,8 @@ event _handle_favorite => sub {
 
     TRACE("[handle_favorite] $index");
 
-    my @candidates = $self->stashed_candidates;
-    if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
-        $self->twitter(create_favorite => { id => $candidates[$index - 1] });
+    if ( my $candidate_id = $self->select_candidate_id($index) ) {
+        $self->twitter(create_favorite => { id => $candidate_id });
         return 1; # handled
     }
     return 0; # unhandled
@@ -1493,7 +1509,7 @@ event cmd_retweet_response => sub {
 
     $self->stash({
         handler    => '_handle_retweet',
-        candidates => [ map $$_{id_str}, @$recent ],
+        candidates => $recent,
     });
 
     $self->bot_says($channel, 'Which tweet?');
@@ -1518,9 +1534,8 @@ event cmd_rt => sub { shift->cmd_retweet(@_) };
 event _handle_retweet => sub {
     my ( $self, $channel, $index ) = @_[OBJECT, ARG0, ARG1];
 
-    my @candidates = $self->stashed_candidates;
-    if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
-        $self->twitter(retweet => { id => $candidates[$index - 1] });
+    if ( my $candidate_id = $self->select_candidate_id($index) ) {
+        $self->twitter(retweet => { id => $candidate_id });
         return 1; # handled
     }
     return 0; # unhandled
@@ -1554,7 +1569,6 @@ event cmd_reply => sub {
         return;
     }
 
-    $message = "\@$nick $message";
     return if $self->status_text_too_long($channel, $message);
 
     $count ||= $self->selection_count;
@@ -1576,7 +1590,7 @@ event cmd_reply_response => sub {
 
     $self->stash({
         handler    => '_handle_reply',
-        candidates => [ map $_->{id_str}, @$recent ],
+        candidates => $recent,
         message    => $message,
     });
 
@@ -1594,11 +1608,18 @@ event cmd_reply_response => sub {
 event _handle_reply => sub {
     my ( $self, $channel, $index ) = @_[OBJECT, ARG0, ARG1];
 
-    my @candidates = $self->stashed_candidates;
-    if ( $index =~ /^\d+$/ && 0 < $index && $index <= @candidates ) {
+    if ( my $s = $self->select_candidate($index) ) {
+        if ( my $retweeted = $s->{retweeted_status} ) {
+            # For retweets, reply to the original status
+            $s = $retweeted;
+        }
+
+        my $msg = sprintf '@%s %s', $s->{user}{screen_name}, $self->stashed_message;
+        return 1 if $self->status_text_too_long($channel, $msg);
+
         $self->twitter(update => {
-            status                => $self->stashed_message,
-            in_reply_to_status_id => $candidates[$index - 1],
+            status                => $msg,
+            in_reply_to_status_id => $$s{id_str},
         });
         return 1; # handled
     }

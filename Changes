@@ -1,3 +1,5 @@
+    - Reply to original status when replying to retweets
+
 0.20 2014-03-30
     - Added PkgVersion so dzil will version the packages!
 
