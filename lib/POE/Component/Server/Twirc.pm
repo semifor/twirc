@@ -323,7 +323,7 @@ has twitter_rest_api => (
 );
 
 sub to_json { JSON::MaybeXS->new->encode($_[1]) }
-sub to_pretty_json { JSON::MaybeXS->new->pretty>encode($_[1]) }
+sub to_pretty_json { JSON::MaybeXS->new->pretty->encode($_[1]) }
 
 # force build of users by nick hash early
 sub BUILD { shift->_users_by_nick }
