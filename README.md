@@ -34,5 +34,5 @@ it under the same terms as Perl itself.
 
 # SEE ALSO
 
-[Module::CPANfile](https://metacpan.org/pod/POE::Component::Sever::Twirc)
+[Module::CPANfile](https://metacpan.org/pod/POE::Component::Server::Twirc)
 [App::Twirc::Manual](https://metacpan.org/pod/App::Twirc::Manual)
