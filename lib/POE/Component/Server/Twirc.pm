@@ -4,6 +4,7 @@ use MooseX::POE;
 
 use utf8;
 use Log::Log4perl qw/:easy/;
+use Log::Log4perl::Appender;
 use POE qw(Component::Server::IRC);
 use Net::OAuth;
 use Digest::SHA;

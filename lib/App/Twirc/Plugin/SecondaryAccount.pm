@@ -91,21 +91,21 @@ By appending C<only> to the C<option> value, your status will only be posted to
 the the account with that C<option> value.
 
 I use a configuration similar to the one in the synopsis to cross-post my
-Twitter status updates to Identi.ca, and optionally to Facebook.  My Twitter
+Twitter status updates to L<http://identi.ca>, and optionally to Facebook.  My Twitter
 screen name is C<semifor>.  I created an account with screen name C<semifor_fb>
 and registered it with Twitter's Facebook application.  In the C<twirc>
 configuration file, I assigned C<option> value C<fb> to the account.
 
-I created another secondary account with my Identi.ca screen name.  In C<twirc>
-configuration, I used the C<net_twitter_options> to specify Identi.ca's
+I created another secondary account with my L<http://identi.ca> screen name.  In C<twirc>
+configuration, I used the C<net_twitter_options> to specify L<http://identi.ca>'s
 C<apiurl>.
 
 Now, when I post a normal status update, it is posted to C<semifor> on both
-Twitter and Identi.ca.  If I include a C<-fb> option to post, my status update
-is posted to Twitter, Identi.ca, and Facebook.  If I add a C<-fbonly> option to
+Twitter and L<http://identi.ca>.  If I include a C<-fb> option to post, my status update
+is posted to Twitter, L<http://identi.ca>, and Facebook.  If I add a C<-fbonly> option to
 C<post>, my status update is only posted to the Facebook account.
 
-=head1 DEPRCATION NOTICE
+=head1 DEPRECATION NOTICE
 
 This module relies on username/password authentication, which Twitter dropped
 ages ago. The author isn't using this plugin, personally, and suspects no one

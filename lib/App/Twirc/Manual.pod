@@ -167,7 +167,7 @@ To use C<twirc> you first need to start the server:
     bin/twirc -b --state_file=twirc.state
 
 The C<-b> option runs C<twirc> in the background.  Drop the C<-b> to see log
-messages to STDERR. (The author runs twirc and his irc client in screen,
+messages to STDERR. (The author runs twirc and his IRC client in screen,
 L<http://www.gnu.org/software/screen/>, to monitor log messages to STDERR.)
 
 Next, connect to the server from your IRC client.  I use C<irssi>
@@ -281,7 +281,7 @@ ignore the user.  In C<irssi>:
     /ignore LoudMouth ALL
     /ignore -except -pattern @YourName LoudMouth ALL
 
-Now, you won't hear from LoudMouth unless she @replies you, and she won't know
+Now, you won't hear from C<LoudMouth> unless she C<@replies> you, and she won't know
 you're ignoring her (unless she reads this tip!).
 
 =head2 Multiple accounts
